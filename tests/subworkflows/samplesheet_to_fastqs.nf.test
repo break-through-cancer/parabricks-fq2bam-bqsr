@@ -16,14 +16,18 @@ nextflow_workflow {
             assert lanes.S2_1[0].single_end && lanes.S2_1[0].status == 1 && lanes.S2_1[1].size() == 1
         }
     }
-    test("patient and status default; non-Illumina header gives an unknown flowcell") {
+    test("status defaults; non-Illumina header gives an unknown flowcell") {
         when { workflow { "input[0] = \"\${projectDir}/tests/fixtures/fastq/defaults.csv\"" } }
         then {
             assert workflow.success
             def meta = workflow.out.lanes[0][0]
-            assert meta.patient == 'S3' && meta.status == 0
+            assert meta.patient == 'P3' && meta.status == 0
             assert meta.read_group.startsWith('@RG\\tID:unknown.S3.1\\t')
         }
+    }
+    test("a missing patient column is rejected") {
+        when { workflow { "input[0] = \"\${projectDir}/tests/fixtures/fastq/missing_patient.csv\"" } }
+        then { assert workflow.failed; assert workflow.stdout.join('\n').contains("missing 'patient'") }
     }
     test("a sample may mix paired lanes and a single-end (singleton) lane") {
         when { workflow { "input[0] = \"\${projectDir}/tests/fixtures/fastq/mixed_pe_se.csv\"" } }

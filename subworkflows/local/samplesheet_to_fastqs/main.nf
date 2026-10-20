@@ -43,17 +43,21 @@ def flowcellFromFastq(Object path) {
 
 def validateFastqRow(Map row) {
     if (!row.sample) error "FASTQ samplesheet row missing 'sample': ${row}"
+    // No fallback to row.sample here: SM embeds this value as "${patient}_${sample}",
+    // and a silent patient==sample fallback produces a self-doubled SM that downstream
+    // consumers (e.g. ICONICC-NF's SUBSET_PAIR_VCF) cannot anticipate -- require it
+    // explicit, same as nf-core/sarek's own schema_input.json.
+    if (!row.patient) error "FASTQ samplesheet row '${row.sample}' missing 'patient'"
     if (!row.lane) error "FASTQ samplesheet row '${row.sample}' missing 'lane'"
     if (!row.fastq_1) error "FASTQ samplesheet row '${row.sample}' lane '${row.lane}' missing 'fastq_1'"
     def status = row.status ?: '0'
     if (!(status in ['0', '1'])) error "FASTQ samplesheet row '${row.sample}': status must be 0 or 1, got '${status}'"
-    def patient = row.patient ?: row.sample
     def reads = [file(resolveRelativeToProjectDir(row.fastq_1), checkIfExists: true)]
     if (row.fastq_2) reads << file(resolveRelativeToProjectDir(row.fastq_2), checkIfExists: true)
     def flowcell = flowcellFromFastq(reads[0])
     def unit = "${flowcell}.${row.sample}.${row.lane}"
-    def rg = "@RG\\tID:${unit}\\tPU:${unit}\\tSM:${patient}_${row.sample}\\tLB:${row.sample}\\tPL:${params.seq_platform}".toString()
-    def meta = [id: "${row.sample}_${row.lane}".toString(), sample: row.sample, patient: patient, status: status.toInteger(),
+    def rg = "@RG\\tID:${unit}\\tPU:${unit}\\tSM:${row.patient}_${row.sample}\\tLB:${row.sample}\\tPL:${params.seq_platform}".toString()
+    def meta = [id: "${row.sample}_${row.lane}".toString(), sample: row.sample, patient: row.patient, status: status.toInteger(),
                 lane: row.lane, single_end: reads.size() == 1, read_group: rg]
     [meta, reads]
 }

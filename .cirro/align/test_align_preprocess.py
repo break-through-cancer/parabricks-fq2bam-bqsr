@@ -21,22 +21,29 @@ def files(rows, with_index=True):
     return df if with_index else df.drop(columns=["sampleIndex"])
 
 
-META = pd.DataFrame([{"sample": "S1"}])
+META = pd.DataFrame([{"sample": "S1", "patient": "P1"}])
 
 
-def test_pairs_by_sample_index_with_metadata_defaults():
+def test_pairs_by_sample_index_with_status_default():
     f = files([
         (0, "S1", "1", 1, "s3://b/a_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/a_R2.fq.gz"),
         (1, "S1", "2", 1, "s3://b/b_R1.fq.gz"), (1, "S1", "2", 2, "s3://b/b_R2.fq.gz"),
         (2, "S2", "1", 1, "s3://b/c.fq.gz"),
     ])
-    meta = pd.DataFrame([{"sample": "S1", "patient": "P1", "status": 1}, {"sample": "S2"}])
+    meta = pd.DataFrame([{"sample": "S1", "patient": "P1", "status": 1}, {"sample": "S2", "patient": "P2"}])
     sheet = build_fastq_samplesheet(f, meta, LOG)
     assert list(sheet.columns) == ["patient", "sample", "status", "lane", "fastq_1", "fastq_2"]
     assert sheet["lane"].tolist() == ["0", "1", "2"]
     s2 = sheet[sheet["sample"] == "S2"].iloc[0]
-    assert s2["patient"] == "S2" and s2["status"] == 0 and s2["fastq_2"] == ""
+    assert s2["patient"] == "P2" and s2["status"] == 0 and s2["fastq_2"] == ""
     assert sheet[sheet["sample"] == "S1"]["status"].tolist() == [1, 1]
+
+
+def test_missing_patient_in_cirro_metadata_is_an_error():
+    f = files([(0, "S1", "1", 1, "s3://b/a_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/a_R2.fq.gz")])
+    meta = pd.DataFrame([{"sample": "S1"}])
+    with pytest.raises(ValueError, match="patient"):
+        build_fastq_samplesheet(f, meta, LOG)
 
 
 def test_pairing_does_not_depend_on_file_names():
@@ -207,28 +214,28 @@ def test_igenomes_branch_offers_three_interval_modes_and_a_custom_bed():
 def test_singleton_found_in_the_file_list_becomes_a_single_end_row_and_is_not_paired():
     f = files([(0, "S1", "1", 1, "s3://b/S1_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/S1_R2.fq.gz"),
                (1, "S1", "1", 1, "s3://b/S1__singletons.fastq.gz")])
-    meta = pd.DataFrame([{"sample": "S1", "fastq_singleton": "S1__singletons.fastq.gz"}])
+    meta = pd.DataFrame([{"sample": "S1", "patient": "P1", "fastq_singleton": "S1__singletons.fastq.gz"}])
     sheet = build_fastq_samplesheet(f, meta, LOG)
     assert sorted(zip(sheet["fastq_1"], sheet["fastq_2"])) == [("s3://b/S1_R1.fq.gz", "s3://b/S1_R2.fq.gz"), ("s3://b/S1__singletons.fastq.gz", "")]
 
 
 def test_singleton_missing_from_the_file_list_is_resolved_next_to_fastq_1():
     f = files([(0, "S1", "1", 1, "s3://b/d/S1_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/d/S1_R2.fq.gz")])
-    meta = pd.DataFrame([{"sample": "S1", "fastq_singleton": "S1__singletons.fastq.gz"}])
+    meta = pd.DataFrame([{"sample": "S1", "patient": "P1", "fastq_singleton": "S1__singletons.fastq.gz"}])
     assert "s3://b/d/S1__singletons.fastq.gz" in build_fastq_samplesheet(f, meta, LOG)["fastq_1"].tolist()
 
 
 def test_singleton_with_an_unset_read_number_is_still_handled():
     f = files([(0, "S1", "1", 1, "s3://b/S1_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/S1_R2.fq.gz"),
                (1, "S1", "1", None, "s3://b/S1__singletons.fastq.gz")])
-    meta = pd.DataFrame([{"sample": "S1", "fastq_singleton": "S1__singletons.fastq.gz"}])
+    meta = pd.DataFrame([{"sample": "S1", "patient": "P1", "fastq_singleton": "S1__singletons.fastq.gz"}])
     assert len(build_fastq_samplesheet(f, meta, LOG)) == 2
 
 
 def test_samples_without_a_singleton_are_unchanged():
     f = files([(0, "S1", "1", 1, "s3://b/S1_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/S1_R2.fq.gz"),
                (1, "S2", "1", 1, "s3://b/S2_R1.fq.gz"), (1, "S2", "1", 2, "s3://b/S2_R2.fq.gz")])
-    meta = pd.DataFrame([{"sample": "S1", "fastq_singleton": "S1__singletons.fastq.gz"}, {"sample": "S2", "fastq_singleton": None}])
+    meta = pd.DataFrame([{"sample": "S1", "patient": "P1", "fastq_singleton": "S1__singletons.fastq.gz"}, {"sample": "S2", "patient": "P2", "fastq_singleton": None}])
     sheet = build_fastq_samplesheet(f, meta, LOG)
     assert len(sheet[sheet["sample"] == "S2"]) == 1 and len(sheet[sheet["sample"] == "S1"]) == 2
 
@@ -246,7 +253,7 @@ def test_singleton_named_in_cirros_file_list_column_is_resolved_next_to_its_mate
         {"sample": "S1", "file": f"{d}/S1_R1.fastq.gz", "dataset": "src", "sampleIndex": 1, "read": 1, "readType": "R", "singleton": "S1_singletons.fastq.gz"},
         {"sample": "S1", "file": f"{d}/S1_R2.fastq.gz", "dataset": "src", "sampleIndex": 1, "read": 2, "readType": "R", "singleton": "S1_singletons.fastq.gz"},
     ])
-    sheet = build_fastq_samplesheet(f, pd.DataFrame([{"sample": "S1"}]), LOG)
+    sheet = build_fastq_samplesheet(f, pd.DataFrame([{"sample": "S1", "patient": "P1"}]), LOG)
     assert sorted(zip(sheet["fastq_1"], sheet["fastq_2"])) == [(f"{d}/S1_R1.fastq.gz", f"{d}/S1_R2.fastq.gz"), (f"{d}/S1_singletons.fastq.gz", "")]
 
 
