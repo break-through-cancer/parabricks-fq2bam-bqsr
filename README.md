@@ -53,7 +53,7 @@ One row per lane. See `assets/samplesheet_fastq.csv`.
 
 | Column | Required | Meaning |
 | --- | --- | --- |
-| `patient` | no (defaults to `sample`) | Groups samples; part of the read group `SM`. |
+| `patient` | yes | Groups samples; embedded in the read group `SM` as `<patient>_<sample>`. |
 | `sample` | yes | Sample ID. |
 | `status` | no (defaults to `0`) | `0` normal, `1` tumor (adds BWA `-B 3`). |
 | `lane` | yes | Lane identifier, unique within a sample. |

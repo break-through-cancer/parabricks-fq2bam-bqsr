@@ -67,7 +67,14 @@ def build_fastq_samplesheet(files: pd.DataFrame, samplesheet: pd.DataFrame, log)
     missing = meta["status"].isna().sum() + len(set(wide["sample"]) - set(meta.index))
     if missing:
         log.warning(f"status not provided for {missing} sample(s), defaulting to 0 (normal)")
-    wide["patient"] = wide["sample"].map(meta["patient"]).fillna(wide["sample"])
+    # No fallback to the sample id here: this feeds SM:${patient}_${sample} in the CRAM's
+    # read group (subworkflows/local/samplesheet_to_fastqs/main.nf), and a silent
+    # patient==sample fallback produces a self-doubled SM that downstream consumers
+    # (e.g. ICONICC-NF's SUBSET_PAIR_VCF) cannot anticipate.
+    wide["patient"] = wide["sample"].map(meta["patient"])
+    missing_patient = sorted(set(wide.loc[wide["patient"].isna(), "sample"]))
+    if missing_patient:
+        raise ValueError("No patient recorded in Cirro sample metadata for: " + ", ".join(missing_patient))
     wide["status"] = wide["sample"].map(meta["status"]).fillna(0).astype(int)
     wide = wide.sort_values(["sample", "lane", "fastq_1"]).reset_index(drop=True)
     wide["lane"] = [str(i) for i in range(len(wide))]
