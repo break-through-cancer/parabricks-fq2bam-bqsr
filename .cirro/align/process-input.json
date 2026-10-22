@@ -30,5 +30,6 @@
   "optical_duplicate_pixel_distance": "$.dataset.params.advanced.optical_duplicate_pixel_distance",
   "fq2bam_gpus": "$.dataset.params.alignment_resources.fq2bam_gpus",
   "fq2bam_low_memory": "$.dataset.params.alignment_resources.fq2bam_low_memory",
+  "fq2bam_gpuwrite": "$.dataset.params.alignment_resources.fq2bam_gpuwrite",
   "fq2bam_memory_gb": "$.dataset.params.alignment_resources.fq2bam_memory_gb"
 }
