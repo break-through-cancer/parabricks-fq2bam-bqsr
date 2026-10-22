@@ -162,14 +162,17 @@ def test_every_dataset_field_is_filtered_by_process():
     assert datasets["genome_index"]["process"] == ["process-cirro-genome-index-bwa-1-0", "genome_bwa_index"]
 
 
-def test_form_offers_low_memory_off_by_default_and_hides_gpuwrite():
+def test_form_offers_low_memory_off_and_gpuwrite_on_by_default():
+    # gpuwrite stays on (no runtime difference), but a deep exome failed in PBCuBGZFWriter with
+    # "Index buffer is too small..." under both low-memory settings, so it must be switchable.
     import json
     here = pathlib.Path(__file__).parent
     form = (here / "process-form.json").read_text()
     resources = json.loads(form)["form"]["properties"]["alignment_resources"]["properties"]
     assert resources["fq2bam_low_memory"]["default"] is False
-    assert "fq2bam_gpuwrite" not in form
-    assert "fq2bam_gpuwrite" not in (here / "process-input.json").read_text()
+    assert resources["fq2bam_gpuwrite"]["default"] is True
+    inputs = json.loads((here / "process-input.json").read_text())
+    assert inputs["fq2bam_gpuwrite"] == "$.dataset.params.alignment_resources.fq2bam_gpuwrite"
 
 
 def test_igenomes_with_custom_intervals_uses_them():
@@ -333,7 +336,7 @@ def test_alignment_resources_are_their_own_block_above_advanced():
     props = json.loads((pathlib.Path(__file__).parent / "process-form.json").read_text())["form"]["properties"]
     keys = list(props)
     assert keys.index("alignment_resources") == keys.index("advanced") - 1
-    assert list(props["alignment_resources"]["properties"]) == ["fq2bam_gpus", "fq2bam_low_memory", "fq2bam_memory_gb"]
+    assert list(props["alignment_resources"]["properties"]) == ["fq2bam_gpus", "fq2bam_low_memory", "fq2bam_gpuwrite", "fq2bam_memory_gb"]
     assert "fq2bam_gpus" not in props["advanced"]["properties"]
 
 

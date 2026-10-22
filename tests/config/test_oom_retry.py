@@ -35,3 +35,16 @@ def test_fq2bam_memory_override_reaches_both_fq2bam_processes():
         text = (ROOT / "modules" / "local" / name).read_text()
         memory = [l for l in text.splitlines() if l.strip().startswith("memory")][0]
         assert "params.fq2bam_memory_gb" in memory, f"{name}: {memory.strip()}"
+
+
+def test_cirro_retries_qc_steps_killed_while_staging_with_more_memory():
+    # The AWS CLI staging the alignment into SAMTOOLS_STATS (4 GB) was OOM-killed and the task
+    # exited 1, which the default rule does not retry, so the run ended after every GPU step had finished.
+    for name in ("samtools_stats.nf", "samtools_flagstat.nf", "mosdepth.nf"):
+        text = (ROOT / "modules" / "local" / name).read_text()
+        memory = [l for l in text.splitlines() if l.strip().startswith("memory")][0]
+        assert "task.attempt" in memory, f"{name}: {memory.strip()}"
+    for proc in ("align", "apply_bqsr"):
+        for name in ("SAMTOOLS_STATS", "SAMTOOLS_FLAGSTAT", "MOSDEPTH"):
+            block = gpu_block(proc, name)
+            assert "+ 1 +" in block and "2147483647" in block, (proc, name)

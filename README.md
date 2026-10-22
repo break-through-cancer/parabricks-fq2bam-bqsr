@@ -159,7 +159,7 @@ the better choice at that memory tier: same cost, faster alignment.
 | `--optical_duplicate_pixel_distance` | `100` | Optical-duplicate metrics only; 2500 is usual for patterned flowcells. |
 | `--fq2bam_gpus` | `2` | GPUs for alignment, 1–4; set 1 to minimise cost, more for speed. CPUs and memory scale with it: 12 CPUs and 44 GB per GPU, at least 16 CPUs / 64 GB. |
 | `--fq2bam_low_memory` | `false` | `--low-memory` for fq2bam (one BWA stream per GPU). Turn on if a smaller GPU runs out of memory. |
-| `--fq2bam_gpuwrite` | `true` | `--gpuwrite` for fq2bam. Not shown on the Cirro form. |
+| `--fq2bam_gpuwrite` | `true` | `--gpuwrite` for fq2bam. Turn off if fq2bam fails with "Index buffer is too small for the maximum possible alignments in this batch"; runtime is unchanged. |
 | `--fq2bam_intermediate_fmt` | `bam` | Format of the duplicate-marked alignment passed from fq2bam (or markdup) to applybqsr: `bam` or `cram`. Not published; final outputs follow `--output_fmt`. Not shown on the Cirro form. |
 | `--fq2bam_memory_gb` | unset | Override `fq2bam`'s first-attempt host memory in GB (16–768); retries multiply it by the attempt number and `--memory-limit` stays at half. Unset: 44 GB per GPU, at least 64. See *Settings by sequencing depth*. |
 | `--apply_bqsr` | `true` | FASTQ entry with known sites: run `applybqsr` (and quantization) in this same run. `false` aligns only, publishing the markduplicates alignment and BQSR table as this run's output, to apply BQSR later with a separate alignment-entry run against them. No effect without known sites, or on the alignment entry (which always applies BQSR). |
