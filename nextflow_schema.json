@@ -162,7 +162,7 @@
                 },
                 "applybqsr_gpus": {
                     "type": "integer",
-                    "description": "GPUs for applybqsr: 1 or 2 (pbrun applybqsr accepts no more). Default 1.",
+                    "description": "GPUs for applybqsr: 1 or 2 (pbrun applybqsr accepts no more). Default 1. Recommended: 2 for 60x and deeper coverage; 1 for shallower samples.",
                     "default": 1,
                     "minimum": 1,
                     "maximum": 2

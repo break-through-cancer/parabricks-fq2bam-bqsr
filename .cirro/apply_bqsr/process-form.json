@@ -96,7 +96,7 @@
             "default": 1,
             "minimum": 1,
             "maximum": 2,
-            "description": "1 or 2. 1 is the tested setting; 2 is experimental."
+            "description": "1 or 2. Recommended: 2 for 60x and deeper coverage (about 20% faster, slightly cheaper); 1 for shallower samples."
           }
         }
       }

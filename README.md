@@ -119,6 +119,10 @@ requests `--applybqsr_gpus` (default 1; `pbrun applybqsr` accepts only 1 or 2). 
 the task on a GPU compute environment; with the local executor and Docker, `--gpus all`
 is added. Local runs need a Linux host with an NVIDIA GPU.
 
+`--applybqsr_gpus` stays at 1 by default. Use 2 for 60x and deeper coverage: in a test on 60x–70x
+samples, the `pbrun applybqsr` step ran about 20% faster and cost about 15–18% less per sample. On
+roughly 30x samples it was only slightly faster and cost 30–40% more, so keep 1 there.
+
 ### Settings by sequencing depth
 
 `fq2bam` is the costly step. Its host memory peaks in its last phase (duplicate marking,
@@ -157,6 +161,7 @@ the better choice at that memory tier: same cost, faster alignment.
 | `--save_trimmed` | `false` | Publish trimmed FASTQs. |
 | `--markdups_se_mode` | `5prime` | Single-end duplicate marking: `5prime` (standard) or `start-end` (adapter-trimmed short fragments such as cfDNA). |
 | `--optical_duplicate_pixel_distance` | `100` | Optical-duplicate metrics only; 2500 is usual for patterned flowcells. |
+| `--applybqsr_gpus` | `1` | GPUs for applying BQSR, 1 or 2. Recommended: 2 for 60x and deeper coverage, 1 for shallower samples. Memory and CPUs do not scale with it. |
 | `--fq2bam_gpus` | `2` | GPUs for alignment, 1–4; set 1 to minimise cost, more for speed. CPUs and memory scale with it: 12 CPUs and 44 GB per GPU, at least 16 CPUs / 64 GB. |
 | `--fq2bam_low_memory` | `false` | `--low-memory` for fq2bam (one BWA stream per GPU). Turn on if a smaller GPU runs out of memory. |
 | `--fq2bam_gpuwrite` | `true` | `--gpuwrite` for fq2bam. Turn off if fq2bam fails with "Index buffer is too small for the maximum possible alignments in this batch"; runtime is unchanged. |
