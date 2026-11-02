@@ -1,4 +1,4 @@
-include { pbrunFunction } from './pbrun_wrapper'
+include { pbrunFunction; dedupeHdFunction } from './pbrun_wrapper'
 
 process PARABRICKS_APPLYBQSR {
     tag "${meta.sample}"
@@ -25,6 +25,7 @@ process PARABRICKS_APPLYBQSR {
     """
     set -euo pipefail
     ${pbrunFunction()}
+    ${dedupeHdFunction()}
     if command -v nvidia-smi >/dev/null 2>&1; then
         echo "GPU: \$(nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader | paste -sd ';' -)" >&2
     else
@@ -44,6 +45,7 @@ process PARABRICKS_APPLYBQSR {
     samtools idxstats -@ ${task.cpus} ${alignment} > ${meta.sample}.input.idxstats
 
     pbrun applybqsr --ref ${ref_fasta} ${args}
+    dedupe_hd ${meta.sample}.recal.bam
     ${index_here ? "samtools index -@ ${task.cpus} ${meta.sample}.recal.bam" : ''}
     """
 

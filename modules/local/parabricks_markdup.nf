@@ -1,4 +1,4 @@
-include { pbrunFunction } from './pbrun_wrapper'
+include { pbrunFunction; dedupeHdFunction } from './pbrun_wrapper'
 
 process PARABRICKS_MARKDUP {
     tag "${meta.sample}"
@@ -34,6 +34,7 @@ process PARABRICKS_MARKDUP {
     """
     set -euo pipefail
     ${pbrunFunction()}
+    ${dedupeHdFunction()}
     if command -v nvidia-smi >/dev/null 2>&1; then
         echo "GPU: \$(nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader | paste -sd ';' -)" >&2
     else
@@ -54,6 +55,7 @@ process PARABRICKS_MARKDUP {
             --sort-order coordinate --gpusort ${gpuwrite} --mem-limit ${mem} --tmp-dir .
         rm unsorted.${out}
     fi
+    dedupe_hd ${out}
     [ -f ${index} ] || samtools index -@ ${task.cpus} ${out}
     ${bqsr ? "pbrun bqsr --ref ${fasta} ${bqsr} --tmp-dir ." : ''}
     pbrun collectmultiplemetrics --ref ${fasta} --bam ${out} --out-qc-metrics-dir ${s}_qc_metrics --gen-all-metrics --tmp-dir .
