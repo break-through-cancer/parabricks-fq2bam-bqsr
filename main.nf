@@ -189,6 +189,7 @@ def validateParams() {
     }
     if (!(params.fq2bam_intermediate_fmt in ['cram', 'bam'])) error "Invalid fq2bam_intermediate_fmt '${params.fq2bam_intermediate_fmt}': must be 'cram' or 'bam'"
     if (!params.fq2bam_gpus.toString().isInteger() || !(params.fq2bam_gpus.toString().toInteger() in 1..4)) error "Invalid fq2bam_gpus '${params.fq2bam_gpus}': must be between 1 and 4"
+    if (!params.applybqsr_gpus.toString().isInteger() || !(params.applybqsr_gpus.toString().toInteger() in 1..2)) error "Invalid applybqsr_gpus '${params.applybqsr_gpus}': must be 1 or 2 (pbrun applybqsr accepts only 1 or 2 GPUs)"
     if (params.quantize_quals_enabled.toString() == 'true') {
         def bins = params.static_quantized_quals.toString().tokenize(',')*.trim()
         if (!bins || bins.any { !it.isInteger() }) error "Invalid static_quantized_quals '${params.static_quantized_quals}': must be a comma-separated list of integers, e.g. '10,20,30'"

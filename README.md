@@ -115,7 +115,7 @@ partial VCF overlap warns).
 ### GPU
 
 `PARABRICKS_FQ2BAM` requests `--fq2bam_gpus` GPUs (default 2); `PARABRICKS_APPLYBQSR`
-requests 1 (`pbrun applybqsr` accepts only 1 or 2). On AWS Batch, `accelerator` places
+requests `--applybqsr_gpus` (default 1; `pbrun applybqsr` accepts only 1 or 2). On AWS Batch, `accelerator` places
 the task on a GPU compute environment; with the local executor and Docker, `--gpus all`
 is added. Local runs need a Linux host with an NVIDIA GPU.
 

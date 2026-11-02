@@ -3,6 +3,7 @@
   "outdir": "$.dataset.dataPath",
   "genome": "GATK.GRCh38",
   "igenomes_base": "$.referencesBucketUri|/igenomes/",
+  "applybqsr_gpus": "$.dataset.params.resources.applybqsr_gpus",
   "output_fmt": "$.dataset.params.output.output_fmt",
   "cram_version": "$.dataset.params.output.cram_version",
   "quantize_quals_enabled": "$.dataset.params.quantization.quantize_quals_enabled",
