@@ -16,10 +16,11 @@ pbrun() {
 def dedupeHdFunction() {
     '''
 dedupe_hd() {
-    local f=$1 n
-    n=$(samtools view -H "$f" | grep -c '^@HD' || true)
+    local f=$1 n hd
+    hd=$(samtools view -H "$f" | grep '^@HD' || true)
+    n=$(printf '%s\n' "$hd" | grep -c '^@HD' || true)
     [ "$n" -gt 1 ] || return 0
-    if ! samtools view -H "$f" | grep -q '^@HD.*SO:coordinate'; then
+    if [[ "$hd" != *SO:coordinate* ]]; then
         echo "$f has $n @HD lines and none is SO:coordinate; not rewriting the header" >&2
         return 1
     fi

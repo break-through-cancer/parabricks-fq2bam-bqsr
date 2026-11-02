@@ -39,3 +39,20 @@ dedupe_hd t.bam
 """
     out = subprocess.run(["bash", "-c", script], cwd=tmp_path, capture_output=True, text=True, check=True).stdout.split("\n")
     assert out[:3] == ["1", "@HD\tVN:1.5\tSO:coordinate", "1"]
+
+
+@pytest.mark.skipif(shutil.which("samtools") is None, reason="samtools not installed")
+def test_helper_handles_a_header_larger_than_a_pipe_buffer(tmp_path):
+    # grep -q on the header stream exits early; with pipefail that SIGPIPE read as "no SO:coordinate line".
+    lines = ["@HD\tVN:1.5\tSO:coordinate", "@HD\tVN:1.5\tSO:queryname"]
+    lines += [f"@SQ\tSN:c{i}\tLN:1000\tM5:{'a' * 32}" for i in range(3300)]
+    lines += ["r1\t0\tc0\t1\t60\t8M\t*\t0\t0\tACGTACGT\tIIIIIIII"]
+    (tmp_path / "in.sam").write_text("\n".join(lines) + "\n")
+    script = f"""set -euo pipefail
+{helper()}
+samtools view -b -o t.bam in.sam
+dedupe_hd t.bam
+samtools view -H t.bam | grep -c '^@HD'
+"""
+    out = subprocess.run(["bash", "-c", script], cwd=tmp_path, capture_output=True, text=True, check=True).stdout
+    assert out.strip() == "1"
