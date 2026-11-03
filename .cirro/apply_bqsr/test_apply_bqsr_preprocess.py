@@ -1,3 +1,4 @@
+import json
 import pytest
 
 import importlib.util
@@ -7,6 +8,7 @@ _spec = importlib.util.spec_from_file_location("apply_bqsr_preprocess", pathlib.
 _preprocess = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_preprocess)
 build_samplesheet = _preprocess.build_samplesheet
+apply_genome_params = _preprocess.apply_genome_params
 
 ROOT = "s3://bucket/datasets/ds1/data/preprocessing"
 
@@ -118,3 +120,36 @@ def test_bam_is_the_first_output_format_and_cram_version_shows_only_for_cram():
     branches = {b["properties"]["output_fmt"]["enum"][0]: b for b in group["dependencies"]["output_fmt"]["oneOf"]}
     assert "cram_version" not in branches["bam"]["properties"]
     assert branches["cram"]["properties"]["cram_version"]["default"] == "3.0"
+
+
+def test_igenomes_is_the_default_genome():
+    p = apply_genome_params({"genome": "GATK.GRCh38", "igenomes_base": "s3://refs/igenomes/"})
+    assert p["genome"] == "GATK.GRCh38" and "ref_fasta" not in p
+    p = apply_genome_params({"genome_source": "igenomes", "genome": "GATK.GRCh38"})
+    assert p["genome"] == "GATK.GRCh38" and "genome_source" not in p
+
+
+def test_custom_genome_resolves_dataset_files():
+    p = apply_genome_params({"genome_source": "dataset", "genome_index": "s3://b/ds/data"})
+    assert p["genome"] == "null"
+    assert p["bwa_index"] == "s3://b/ds/data"
+    assert p["ref_fasta"] == "s3://b/ds/data/genome.fasta" and p["ref_fasta_fai"] == "s3://b/ds/data/genome.fasta.fai"
+    assert not {"genome_source", "genome_index"} & p.keys()
+
+
+def test_custom_genome_without_index_is_an_error():
+    with pytest.raises(ValueError, match="BWA genome index"):
+        apply_genome_params({"genome_source": "dataset"})
+
+
+def test_form_and_input_expose_the_genome_selection():
+    here = pathlib.Path(__file__).parent
+    form = json.loads((here / "process-form.json").read_text())["form"]["properties"]["genome_selection"]
+    assert form["properties"]["genome_source"]["enum"] == ["igenomes", "dataset"]
+    custom = form["dependencies"]["genome_source"]["oneOf"][1]
+    assert custom["required"] == ["genome_index"]
+    assert custom["properties"]["genome_index"]["process"] == ["process-cirro-genome-index-bwa-1-0", "genome_bwa_index"]
+    mapping = json.loads((here / "process-input.json").read_text())
+    for key in ("genome_source", "genome", "genome_index"):
+        assert mapping[key].startswith("$.dataset.params.genome_selection.")
+    assert mapping["genome_index"].endswith("|/data")

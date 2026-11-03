@@ -280,6 +280,11 @@ pixel distance, alignment GPUs, low-memory mode and an fq2bam memory override. A
 `fastq_singleton` column in the dataset's samplesheet adds that file to the sample as a
 single-end lane, resolved next to the sample's read 1.
 
+**Apply-BQSR form:** genome source (iGenomes GATK.GRCh38, or a custom genome via a BWA index
+dataset), output format, quantization and the apply-BQSR GPU count. The genome must be the
+one the alignments were made with; a custom genome needs only the BWA index dataset, since
+the recalibration table is already built.
+
 **Registration settings:** repository `break-through-cancer/parabricks-fq2bam-bqsr`, entry
 script `main.nf`, configuration directory `.cirro/align` or `.cirro/apply_bqsr`, Nextflow
 `26.04.0` or later. The align process needs `file_mapping_rules` so its output dataset's
