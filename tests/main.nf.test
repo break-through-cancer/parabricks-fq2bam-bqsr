@@ -252,6 +252,7 @@ nextflow_pipeline {
             assert succeeded.count { it.contains('PARABRICKS_APPLYBQSR') } == 0
             assert succeeded.count { it.contains('QUANTIZE_QUALS') } == 2
             assert succeeded.count { it.contains('SAMTOOLS_FINALIZE') } == 0
+            assert succeeded.count { it.startsWith('SAMTOOLS_STATS') } == 0
             assert succeeded.count { it.startsWith('SAMTOOLS_FLAGSTAT') } == 2
             ['SAMPLE_A', 'SAMPLE_B'].each { s ->
                 assert file("${outputDir}/results/preprocessing/recalibrated/${s}/${s}.recal.bam").exists()

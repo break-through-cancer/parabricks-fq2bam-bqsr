@@ -94,7 +94,9 @@ and `applybqsr` does not run. Each alignment goes straight to quantization, so t
 recalibrated, unquantized alignments (the `--quantize_quals_enabled false` output of an earlier
 run), which then match a full quantized run without repeating `applybqsr`. The files are not
 checked for prior recalibration or quantization. `--quantize_quals_enabled false` is an error
-here. The read-count check is skipped, since no earlier record count exists.
+here. The read-count check and `samtools stats` are skipped: no earlier record count exists, and
+quantization changes only quality bytes, which the quantizer log and its MultiQC plot already
+report. `flagstat` and `mosdepth` still run.
 
 ### Genomes
 

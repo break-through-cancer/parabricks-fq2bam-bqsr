@@ -157,7 +157,12 @@ workflow {
 
     // stats reads the pre-quantization alignment (unaffected by BQSR/quantization except
     // quality bytes); flagstat and mosdepth read the true published file.
-    SAMTOOLS_STATS(to_finish, ref_ch)
+    // The quantize entry skips stats: only quality bytes change, and the quantizer log has the histograms.
+    stats_qc = Channel.empty()
+    if (entry != 'quantize') {
+        SAMTOOLS_STATS(to_finish, ref_ch)
+        stats_qc = SAMTOOLS_STATS.out.stats.map { it[1] }
+    }
     SAMTOOLS_FLAGSTAT(final_ch.map { meta, aln, _idx -> [meta, aln] }, ref_ch)
     if (params.output_fmt == 'cram' && params.cram_version == '3.1') {
         log.warn "mosdepth cannot read CRAM 3.1: coverage QC is skipped (use --cram_version 3.0 to keep it)"
@@ -178,7 +183,7 @@ workflow {
     }
     MULTIQC(
         extra_qc
-            .mix(SAMTOOLS_STATS.out.stats.map { it[1] })
+            .mix(stats_qc)
             .mix(SAMTOOLS_FLAGSTAT.out.flagstat.map { _meta, flagstat -> flagstat })
             .mix(mosdepth_reports)
             .mix(quant_mqc)
