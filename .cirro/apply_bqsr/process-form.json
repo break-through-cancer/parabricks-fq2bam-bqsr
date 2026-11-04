@@ -2,6 +2,67 @@
   "form": {
     "type": "object",
     "properties": {
+      "genome_selection": {
+        "title": "Reference Genome",
+        "type": "object",
+        "properties": {
+          "genome_source": {
+            "title": "Reference Genome Source",
+            "type": "string",
+            "enum": [
+              "igenomes",
+              "dataset"
+            ],
+            "default": "igenomes",
+            "description": "iGenomes GATK.GRCh38, or a custom genome from a Cirro BWA index dataset. Must match the reference the alignments were made with."
+          }
+        },
+        "dependencies": {
+          "genome_source": {
+            "oneOf": [
+              {
+                "properties": {
+                  "genome_source": {
+                    "enum": [
+                      "igenomes"
+                    ]
+                  },
+                  "genome": {
+                    "title": "Genome",
+                    "type": "string",
+                    "enum": [
+                      "GATK.GRCh38"
+                    ],
+                    "default": "GATK.GRCh38"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "genome_source": {
+                    "enum": [
+                      "dataset"
+                    ]
+                  },
+                  "genome_index": {
+                    "title": "BWA Genome Index",
+                    "type": "string",
+                    "pathType": "dataset",
+                    "process": [
+                      "process-cirro-genome-index-bwa-1-0",
+                      "genome_bwa_index"
+                    ],
+                    "description": "The BWA genome index dataset the alignments were made with, containing genome.fasta and genome.fasta.fai."
+                  }
+                },
+                "required": [
+                  "genome_index"
+                ]
+              }
+            ]
+          }
+        }
+      },
       "output": {
         "title": "Output",
         "type": "object",
@@ -85,6 +146,20 @@
           }
         },
         "description": "Collapses base qualities into a few bins to shrink the output; see the README lookup table for how scores map."
+      },
+      "resources": {
+        "title": "Resource Options",
+        "type": "object",
+        "properties": {
+          "applybqsr_gpus": {
+            "title": "GPUs for applying BQSR",
+            "type": "integer",
+            "default": 1,
+            "minimum": 1,
+            "maximum": 2,
+            "description": "1 or 2. Recommended: 2 for 60x and deeper coverage (about 20% faster, slightly cheaper); 1 for shallower samples."
+          }
+        }
       }
     }
   },

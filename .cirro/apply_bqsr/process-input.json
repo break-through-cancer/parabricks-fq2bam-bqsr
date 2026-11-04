@@ -1,8 +1,11 @@
 {
   "input": "$.dataset.s3|/config/manifest.csv",
   "outdir": "$.dataset.dataPath",
-  "genome": "GATK.GRCh38",
+  "genome_source": "$.dataset.params.genome_selection.genome_source",
+  "genome": "$.dataset.params.genome_selection.genome",
+  "genome_index": "$.dataset.params.genome_selection.genome_index|/data",
   "igenomes_base": "$.referencesBucketUri|/igenomes/",
+  "applybqsr_gpus": "$.dataset.params.resources.applybqsr_gpus",
   "output_fmt": "$.dataset.params.output.output_fmt",
   "cram_version": "$.dataset.params.output.cram_version",
   "quantize_quals_enabled": "$.dataset.params.quantization.quantize_quals_enabled",

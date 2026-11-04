@@ -11,6 +11,7 @@ MARKDUPLICATES_FILE = re.compile(r"(?:^|/)preprocessing/markduplicates/(?P<sampl
 RECAL_TABLE_FILE = re.compile(r"(?:^|/)preprocessing/recal_table/(?P<sample>[^/]+)/(?P<name>[^/]+)$")
 INDEX_SUFFIX = {"bam": "bai", "cram": "crai"}
 COLUMNS = ["sample", "alignment", "alignment_index", "recal_table"]
+FORM_ONLY = ("genome_source", "genome_index")
 
 
 def build_samplesheet(paths: Iterable[str]) -> pd.DataFrame:
@@ -74,6 +75,22 @@ def build_samplesheet(paths: Iterable[str]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=COLUMNS)
 
 
+def apply_genome_params(params: dict) -> dict:
+    """Translate Cirro form fields into pipeline genome parameters."""
+    p = dict(params)
+    if p.get("genome_source", "igenomes") == "dataset":
+        index = p.get("genome_index")
+        if not index:
+            raise ValueError("Custom genome selected but no BWA genome index dataset was provided")
+        p["genome"] = "null"
+        p["bwa_index"] = index
+        p["ref_fasta"] = f"{index}/genome.fasta"
+        p["ref_fasta_fai"] = f"{index}/genome.fasta.fai"
+    for k in FORM_ONLY:
+        p.pop(k, None)
+    return p
+
+
 if __name__ == "__main__":
     from cirro.helpers.preprocess_dataset import PreprocessDataset
 
@@ -82,3 +99,9 @@ if __name__ == "__main__":
     ds.logger.info(samplesheet.to_csv(index=False))
     samplesheet.to_csv(ds.params["input"], index=False)
     ds.logger.info(f"Wrote {samplesheet.shape[0]} row(s) to {ds.params['input']}")
+    resolved = apply_genome_params(ds.params)
+    for key in FORM_ONLY:
+        ds.remove_param(key, force=True)
+    for key in ("genome", "bwa_index", "ref_fasta", "ref_fasta_fai"):
+        if key in resolved:
+            ds.add_param(key, resolved[key], overwrite=True)
