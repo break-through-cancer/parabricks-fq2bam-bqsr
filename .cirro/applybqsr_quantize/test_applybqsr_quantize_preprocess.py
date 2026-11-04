@@ -153,3 +153,95 @@ def test_form_and_input_expose_the_genome_selection():
     for key in ("genome_source", "genome", "genome_index"):
         assert mapping[key].startswith("$.dataset.params.genome_selection.")
     assert mapping["genome_index"].endswith("|/data")
+
+
+build_quantize_samplesheet = _preprocess.build_quantize_samplesheet
+build_for_mode = _preprocess.build_for_mode
+
+
+def test_quantize_recalibrated_bam():
+    sheet = build_quantize_samplesheet(files("recalibrated/S1/S1.recal.bam", "recalibrated/S1/S1.recal.bam.bai"))
+    assert list(sheet.columns) == ["sample", "alignment", "alignment_index"]
+    assert sheet.loc[0, "alignment"] == f"{ROOT}/recalibrated/S1/S1.recal.bam"
+
+
+def test_quantize_raw_aligned_cram_when_nothing_recalibrated():
+    sheet = build_quantize_samplesheet(files("markduplicates/S1/S1.md.cram", "markduplicates/S1/S1.md.cram.crai"))
+    assert sheet.loc[0, "alignment_index"].endswith("S1.md.cram.crai")
+
+
+def test_quantize_auto_prefers_recalibrated_per_sample():
+    sheet = build_quantize_samplesheet(files(
+        "recalibrated/S1/S1.recal.bam", "recalibrated/S1/S1.recal.bam.bai",
+        "markduplicates/S1/S1.md.cram", "markduplicates/S1/S1.md.cram.crai",
+        "markduplicates/S2/S2.md.cram", "markduplicates/S2/S2.md.cram.crai",
+    ))
+    assert list(sheet["sample"]) == ["S1", "S2"]
+    assert "recalibrated" in sheet.loc[0, "alignment"] and "markduplicates" in sheet.loc[1, "alignment"]
+
+
+def test_quantize_explicit_source_ignores_the_other_folder():
+    paths = files(
+        "recalibrated/S1/S1.recal.bam", "recalibrated/S1/S1.recal.bam.bai",
+        "markduplicates/S1/S1.md.cram", "markduplicates/S1/S1.md.cram.crai",
+    )
+    assert "markduplicates" in build_quantize_samplesheet(paths, "markduplicates").loc[0, "alignment"]
+    assert "recalibrated" in build_quantize_samplesheet(paths, "recalibrated").loc[0, "alignment"]
+
+
+def test_quantize_errors():
+    with pytest.raises(ValueError, match="no alignments under preprocessing/recalibrated"):
+        build_quantize_samplesheet(files("markduplicates/S1/S1.md.cram", "markduplicates/S1/S1.md.cram.crai"), "recalibrated")
+    with pytest.raises(ValueError, match="No alignments under"):
+        build_quantize_samplesheet(files("recal_table/S1/S1.table"))
+    with pytest.raises(ValueError, match="S1: no index for S1.recal.bam"):
+        build_quantize_samplesheet(files("recalibrated/S1/S1.recal.bam"))
+    with pytest.raises(ValueError, match="S1: expected one BAM/CRAM under recalibrated, found 2"):
+        build_quantize_samplesheet(files(
+            "recalibrated/S1/a.bam", "recalibrated/S1/a.bam.bai", "recalibrated/S1/b.bam", "recalibrated/S1/b.bam.bai"))
+    with pytest.raises(ValueError, match="alignment_source must be"):
+        build_quantize_samplesheet(files("recalibrated/S1/S1.recal.bam"), "everything")
+
+
+def test_mode_decides_samplesheet_and_quantization():
+    bqsr_inputs = files("parabricks/S1/S1.bam", "parabricks/S1/S1.bam.bai", "parabricks/S1/S1.table")
+    both, q_both = build_for_mode(bqsr_inputs, "apply_bqsr_and_quantize")
+    only, q_only = build_for_mode(bqsr_inputs, "apply_bqsr")
+    assert list(both.columns) == list(only.columns) == ["sample", "alignment", "alignment_index", "recal_table"]
+    assert (q_both, q_only) == (True, False)
+    quant, q_quant = build_for_mode(files("markduplicates/S1/S1.md.cram", "markduplicates/S1/S1.md.cram.crai"), "quantize")
+    assert list(quant.columns) == ["sample", "alignment", "alignment_index"] and q_quant is True
+
+
+def test_apply_bqsr_modes_never_use_recalibrated_alignments():
+    recal_only = files("recalibrated/S1/S1.recal.bam", "recalibrated/S1/S1.recal.bam.bai", "recal_table/S1/S1.table")
+    for mode in ("apply_bqsr_and_quantize", "apply_bqsr"):
+        with pytest.raises(ValueError):
+            build_for_mode(recal_only, mode)
+
+
+def test_unknown_mode_is_an_error():
+    with pytest.raises(ValueError, match="mode must be one of"):
+        build_for_mode([], "everything")
+
+
+def test_form_and_input_expose_the_mode_selection():
+    root = pathlib.Path(__file__).parent
+    props = json.loads((root / "process-form.json").read_text())["form"]["properties"]
+    mode = props["mode_selection"]["properties"]["mode"]
+    assert mode["enum"] == ["apply_bqsr_and_quantize", "apply_bqsr", "quantize"]
+    assert mode["default"] == "apply_bqsr_and_quantize"
+    branches = {b["properties"]["mode"]["enum"][0]: b["properties"] for b in props["mode_selection"]["dependencies"]["mode"]["oneOf"]}
+    assert set(branches) == set(mode["enum"])
+    assert "applybqsr_gpus" in branches["apply_bqsr_and_quantize"] and "applybqsr_gpus" in branches["apply_bqsr"]
+    assert "alignment_source" in branches["quantize"] and "applybqsr_gpus" not in branches["quantize"]
+    assert "quantize_quals_enabled" not in props["quantization"]["properties"]
+    mapping = json.loads((root / "process-input.json").read_text())
+    assert mapping["mode"] == "$.dataset.params.mode_selection.mode"
+    assert mapping["alignment_source"] == "$.dataset.params.mode_selection.alignment_source"
+    assert "quantize_quals_enabled" not in mapping
+
+
+def test_form_only_fields_are_dropped_from_the_pipeline_params():
+    out = apply_genome_params({"mode": "quantize", "alignment_source": "auto", "genome_source": "igenomes", "output_fmt": "bam"})
+    assert out == {"output_fmt": "bam"}

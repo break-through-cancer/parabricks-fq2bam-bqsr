@@ -13,7 +13,7 @@
             "properties": {
                 "input": {
                     "type": "string",
-                    "description": "Samplesheet CSV: FASTQ entry (fastq_1 column) or alignment + table entry (alignment column).",
+                    "description": "Samplesheet CSV: FASTQ entry (fastq_1 column), alignment + table entry (alignment and recal_table columns), or quantize-only entry (alignment column without recal_table).",
                     "format": "file-path",
                     "mimetype": "text/csv",
                     "pattern": "^\\S+\\.csv$"

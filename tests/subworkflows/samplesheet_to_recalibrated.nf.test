@@ -1,0 +1,53 @@
+nextflow_workflow {
+    name "Test SAMPLESHEET_TO_RECALIBRATED"
+    script "subworkflows/local/samplesheet_to_recalibrated/main.nf"
+    workflow "SAMPLESHEET_TO_RECALIBRATED"
+
+    test("a valid samplesheet emits one tuple per row without a recalibration table") {
+        when {
+            workflow {
+                """
+                input[0] = "\${projectDir}/tests/fixtures/samplesheet_to_recalibrated/valid.csv"
+                """
+            }
+        }
+        then {
+            assert workflow.success
+            assert workflow.out.samples.size() == 2
+            def by_sample = workflow.out.samples.collectEntries { [ (it[0].sample): it ] }
+            assert by_sample.keySet() == ['SAMPLE_A', 'SAMPLE_B'] as Set
+            assert by_sample.SAMPLE_A.size() == 3
+            assert by_sample.SAMPLE_A[1].toString().endsWith('sample_a.cram')
+            assert by_sample.SAMPLE_A[2].toString().endsWith('sample_a.cram.crai')
+            assert by_sample.SAMPLE_B[1].toString().endsWith('sample_b.bam')
+        }
+    }
+
+    test("a row with an empty alignment_index is a hard error naming the sample") {
+        when {
+            workflow {
+                """
+                input[0] = "\${projectDir}/tests/fixtures/samplesheet_to_recalibrated/missing_index.csv"
+                """
+            }
+        }
+        then {
+            assert !workflow.success
+            assert workflow.stdout.join("\n").contains("Samplesheet row 'SAMPLE_A' missing 'alignment_index'")
+        }
+    }
+
+    test("a duplicate sample ID is a hard error") {
+        when {
+            workflow {
+                """
+                input[0] = "\${projectDir}/tests/fixtures/samplesheet_to_recalibrated/duplicate_sample.csv"
+                """
+            }
+        }
+        then {
+            assert !workflow.success
+            assert workflow.stdout.join("\n").contains("Duplicate sample ID(s) in samplesheet: SAMPLE_A")
+        }
+    }
+}

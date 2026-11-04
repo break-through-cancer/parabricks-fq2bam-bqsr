@@ -28,7 +28,9 @@ def samplesheetEntry(Object path) {
     def alignment = 'alignment' in header
     if (fastq && alignment) error "Samplesheet ${path} has both FASTQ and alignment columns; use one entry point per run"
     if (!fastq && !alignment) error "Samplesheet ${path} has neither a 'fastq_1' nor an 'alignment' column"
-    fastq ? 'fastq' : 'alignment'
+    if (fastq) return 'fastq'
+    // An alignment without a recal_table column is already recalibrated: quantize only.
+    'recal_table' in header ? 'alignment' : 'quantize'
 }
 
 def flowcellFromFastq(Object path) {

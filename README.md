@@ -37,8 +37,9 @@ nextflow run main.nf --input alignment_samplesheet.csv --quantize_quals_enabled 
 ```
 
 `--input` is the only required parameter. The samplesheet header selects the entry point:
-a `fastq_1` column means FASTQ input, an `alignment` column means alignment + table
-input; both together is an error. Invalid parameters, missing samplesheet values,
+a `fastq_1` column means FASTQ input, an `alignment` column with a `recal_table` column
+means alignment + table input, and an `alignment` column without `recal_table` means
+quantize only; `fastq_1` together with `alignment` is an error. Invalid parameters, missing samplesheet values,
 nonexistent paths and mismatched reference files fail at startup with a message naming
 the problem.
 
@@ -85,6 +86,15 @@ One row per sample. See `assets/samplesheet.csv`.
 
 The alignment header contigs must match the selected genome; otherwise the task stops
 before `applybqsr` runs.
+
+### Quantize-only samplesheet
+
+One row per sample: `sample`, `alignment`, `alignment_index`. There is no `recal_table` column,
+and `applybqsr` does not run. Each alignment goes straight to quantization, so this entry suits
+recalibrated, unquantized alignments (the `--quantize_quals_enabled false` output of an earlier
+run), which then match a full quantized run without repeating `applybqsr`. The files are not
+checked for prior recalibration or quantization. `--quantize_quals_enabled false` is an error
+here. The read-count check is skipped, since no earlier record count exists.
 
 ### Genomes
 
@@ -267,7 +277,7 @@ Two process registrations come from this repository:
 | Directory | Entry point | Input dataset |
 | --- | --- | --- |
 | `.cirro/align/` | FASTQ | Paired or single-end FASTQ datasets |
-| `.cirro/apply_bqsr/` | alignment + table | A `sarek_align` dataset (`preprocessing/parabricks/<sample>/<sample>.{bam,bam.bai,table}`), or this pipeline's own `--apply_bqsr false` output (`preprocessing/markduplicates/` + `preprocessing/recal_table/`) |
+| `.cirro/applybqsr_quantize/` | alignment + table, or quantize only | Apply BQSR modes: a `sarek_align` dataset (`preprocessing/parabricks/<sample>/<sample>.{bam,bam.bai,table}`), or this pipeline's own `--apply_bqsr false` output (`preprocessing/markduplicates/` + `preprocessing/recal_table/`). Quantize only: `preprocessing/recalibrated/` or `preprocessing/markduplicates/` of any alignment dataset |
 
 Each directory holds `process-form.json`, `process-input.json`, `preprocess.py`,
 `process-compute.config` and `process-output.json`. Both Parabricks processes run on the
@@ -280,13 +290,18 @@ pixel distance, alignment GPUs, low-memory mode and an fq2bam memory override. A
 `fastq_singleton` column in the dataset's samplesheet adds that file to the sample as a
 single-end lane, resolved next to the sample's read 1.
 
-**Apply-BQSR form:** genome source (iGenomes GATK.GRCh38, or a custom genome via a BWA index
-dataset), output format, quantization and the apply-BQSR GPU count. The genome must be the
-one the alignments were made with; a custom genome needs only the BWA index dataset, since
-the recalibration table is already built.
+**Apply BQSR and Quantize form:** a mode (Apply BQSR and quantize, Apply BQSR only, or
+Quantize only), genome source (iGenomes GATK.GRCh38, or a custom genome via a BWA index
+dataset), output format, quantization, and a mode-specific field: the apply-BQSR GPU count for
+the two BQSR modes, or the alignment source for Quantize only (`recalibrated`, `markduplicates`,
+or `auto`, which takes a sample's recalibrated alignment when present). Quantize only on a
+`markduplicates` alignment skips recalibration, for reads that were already recalibrated in the
+original BAM. The BQSR modes never read `recalibrated/`, so BQSR is not applied twice. The genome
+must be the one the alignments were made with; a custom genome needs only the BWA index dataset,
+since the recalibration table is already built.
 
 **Registration settings:** repository `break-through-cancer/parabricks-fq2bam-bqsr`, entry
-script `main.nf`, configuration directory `.cirro/align` or `.cirro/apply_bqsr`, Nextflow
+script `main.nf`, configuration directory `.cirro/align` or `.cirro/applybqsr_quantize`, Nextflow
 `26.04.0` or later. The align process needs `file_mapping_rules` so its output dataset's
 files are discoverable by a later apply_bqsr run — Cirro's engine uses .NET-style named
 groups (`(?<sample>...)`, not Python's `(?P<sample>...)`), and `is_sample: true` is what
