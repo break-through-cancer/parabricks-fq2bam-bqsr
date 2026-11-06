@@ -23,7 +23,7 @@ def test_parabricks_memory_grows_with_each_attempt():
 
 def test_cirro_runs_every_parabricks_process_on_demand_and_retries_memory_kills():
     # AWS Batch reports a container memory kill without an exit code; Nextflow records Integer.MAX_VALUE.
-    for proc, names in (("align", FASTQ_GPU), ("apply_bqsr", ("PARABRICKS_APPLYBQSR",))):
+    for proc, names in (("align", FASTQ_GPU), ("applybqsr_quantize", ("PARABRICKS_APPLYBQSR",))):
         for name in names:
             block = gpu_block(proc, name)
             assert "PW_ONDEMAND_JOB_QUEUE" in block, (proc, name)
@@ -44,7 +44,7 @@ def test_cirro_retries_qc_steps_killed_while_staging_with_more_memory():
         text = (ROOT / "modules" / "local" / name).read_text()
         memory = [l for l in text.splitlines() if l.strip().startswith("memory")][0]
         assert "task.attempt" in memory, f"{name}: {memory.strip()}"
-    for proc in ("align", "apply_bqsr"):
+    for proc in ("align", "applybqsr_quantize"):
         for name in ("SAMTOOLS_STATS", "SAMTOOLS_FLAGSTAT", "MOSDEPTH"):
             block = gpu_block(proc, name)
             assert "+ 1 +" in block and "2147483647" in block, (proc, name)

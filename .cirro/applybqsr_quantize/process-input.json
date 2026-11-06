@@ -5,11 +5,12 @@
   "genome": "$.dataset.params.genome_selection.genome",
   "genome_index": "$.dataset.params.genome_selection.genome_index|/data",
   "igenomes_base": "$.referencesBucketUri|/igenomes/",
-  "applybqsr_gpus": "$.dataset.params.resources.applybqsr_gpus",
+  "applybqsr_gpus": "$.dataset.params.mode_selection.applybqsr_gpus",
   "output_fmt": "$.dataset.params.output.output_fmt",
   "cram_version": "$.dataset.params.output.cram_version",
-  "quantize_quals_enabled": "$.dataset.params.quantization.quantize_quals_enabled",
   "static_quantized_quals": "$.dataset.params.quantization.static_quantized_quals",
   "preserve_qscores_less_than": "$.dataset.params.quantization.preserve_qscores_less_than",
-  "round_down_quantized": "$.dataset.params.quantization.round_down_quantized"
+  "round_down_quantized": "$.dataset.params.quantization.round_down_quantized",
+  "mode": "$.dataset.params.mode_selection.mode",
+  "alignment_source": "$.dataset.params.mode_selection.alignment_source"
 }

@@ -2,6 +2,7 @@ nextflow.enable.dsl = 2
 
 include { SAMPLESHEET_TO_SAMPLES                    } from './subworkflows/local/samplesheet_to_samples/main'
 include { SAMPLESHEET_TO_FASTQS; samplesheetEntry   } from './subworkflows/local/samplesheet_to_fastqs/main'
+include { SAMPLESHEET_TO_RECALIBRATED               } from './subworkflows/local/samplesheet_to_recalibrated/main'
 include { resolveReferences; checkReferences; intervalsMessage } from './subworkflows/local/references/main'
 include { PREPARE_KNOWN_SITES                       } from './subworkflows/local/prepare_known_sites/main'
 include { READ_CHECKS; fastpReadCount               } from './subworkflows/local/read_checks/main'
@@ -117,6 +118,13 @@ workflow {
             .map { meta, idx -> [[sample: meta.sample], idx] }
         extra_qc = FASTP.out.json.map { it[1] }
             .mix(PARABRICKS_FQ2BAM.out.duplicate_metrics.mix(PARABRICKS_MARKDUP.out.duplicate_metrics).map { _meta, metrics -> metrics })
+    } else if (entry == 'quantize') {
+        if (!quantize) error "The quantize entry (alignment without recal_table) only quantizes: --quantize_quals_enabled false leaves nothing to do"
+        fastq_counts = Channel.empty()
+        SAMPLESHEET_TO_RECALIBRATED(params.input)
+        to_finish = SAMPLESHEET_TO_RECALIBRATED.out.samples.map { meta, alignment, _index -> [meta + [suffix: 'recal'], alignment] }
+        before_idxstats = Channel.empty()
+        extra_qc = Channel.empty()
     } else {
         fastq_counts = Channel.empty()
         SAMPLESHEET_TO_SAMPLES(params.input)
@@ -149,7 +157,12 @@ workflow {
 
     // stats reads the pre-quantization alignment (unaffected by BQSR/quantization except
     // quality bytes); flagstat and mosdepth read the true published file.
-    SAMTOOLS_STATS(to_finish, ref_ch)
+    // The quantize entry skips stats: only quality bytes change, and the quantizer log has the histograms.
+    stats_qc = Channel.empty()
+    if (entry != 'quantize') {
+        SAMTOOLS_STATS(to_finish, ref_ch)
+        stats_qc = SAMTOOLS_STATS.out.stats.map { it[1] }
+    }
     SAMTOOLS_FLAGSTAT(final_ch.map { meta, aln, _idx -> [meta, aln] }, ref_ch)
     if (params.output_fmt == 'cram' && params.cram_version == '3.1') {
         log.warn "mosdepth cannot read CRAM 3.1: coverage QC is skipped (use --cram_version 3.0 to keep it)"
@@ -158,18 +171,23 @@ workflow {
         MOSDEPTH(final_ch, ref_ch)
         mosdepth_reports = MOSDEPTH.out.reports.flatMap { it[1] }
     }
-    READ_CHECKS(
-        SAMTOOLS_FLAGSTAT.out.flagstat.map { meta, s -> [[sample: meta.sample], s] },
-        before_idxstats.map { meta, idx -> [[sample: meta.sample], idx] },
-        fastq_counts
-    )
+    // The quantize entry has no pre-recalibration record count to compare against.
+    read_checks_mqc = Channel.empty()
+    if (entry != 'quantize') {
+        READ_CHECKS(
+            SAMTOOLS_FLAGSTAT.out.flagstat.map { meta, s -> [[sample: meta.sample], s] },
+            before_idxstats.map { meta, idx -> [[sample: meta.sample], idx] },
+            fastq_counts
+        )
+        read_checks_mqc = READ_CHECKS.out.mqc
+    }
     MULTIQC(
         extra_qc
-            .mix(SAMTOOLS_STATS.out.stats.map { it[1] })
+            .mix(stats_qc)
             .mix(SAMTOOLS_FLAGSTAT.out.flagstat.map { _meta, flagstat -> flagstat })
             .mix(mosdepth_reports)
             .mix(quant_mqc)
-            .mix(READ_CHECKS.out.mqc)
+            .mix(read_checks_mqc)
             .collect()
     )
 }

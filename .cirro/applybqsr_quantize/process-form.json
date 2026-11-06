@@ -2,6 +2,88 @@
   "form": {
     "type": "object",
     "properties": {
+      "mode_selection": {
+        "title": "Mode",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "title": "Mode",
+            "type": "string",
+            "enum": [
+              "apply_bqsr_and_quantize",
+              "apply_bqsr",
+              "quantize"
+            ],
+            "enumNames": [
+              "Apply BQSR and quantize",
+              "Apply BQSR only",
+              "Quantize only"
+            ],
+            "default": "apply_bqsr_and_quantize",
+            "description": "Apply BQSR and quantize: input is a pre-BQSR alignment plus its recalibration table. Apply BQSR only: same input, no quantization. Quantize only: input is an existing alignment, with no BQSR applied; see Alignment Source."
+          }
+        },
+        "dependencies": {
+          "mode": {
+            "oneOf": [
+              {
+                "properties": {
+                  "mode": {
+                    "enum": [
+                      "apply_bqsr_and_quantize"
+                    ]
+                  },
+                  "applybqsr_gpus": {
+                    "title": "GPUs for applying BQSR",
+                    "type": "integer",
+                    "default": 1,
+                    "minimum": 1,
+                    "maximum": 2,
+                    "description": "1 or 2. Recommended: 2 for 60x and deeper coverage (about 20% faster, slightly cheaper); 1 for shallower samples."
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "mode": {
+                    "enum": [
+                      "apply_bqsr"
+                    ]
+                  },
+                  "applybqsr_gpus": {
+                    "title": "GPUs for applying BQSR",
+                    "type": "integer",
+                    "default": 1,
+                    "minimum": 1,
+                    "maximum": 2,
+                    "description": "1 or 2. Recommended: 2 for 60x and deeper coverage (about 20% faster, slightly cheaper); 1 for shallower samples."
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "mode": {
+                    "enum": [
+                      "quantize"
+                    ]
+                  },
+                  "alignment_source": {
+                    "title": "Alignment Source",
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "recalibrated",
+                      "markduplicates"
+                    ],
+                    "default": "auto",
+                    "description": "Which alignment in the input dataset to quantize. recalibrated: preprocessing/recalibrated (BQSR already applied, not quantized). markduplicates: the raw aligned, duplicate-marked alignment, with no BQSR applied (use when the reads were already recalibrated in the original BAM). auto: recalibrated when a sample has one, otherwise markduplicates."
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
       "genome_selection": {
         "title": "Reference Genome",
         "type": "object",
@@ -69,7 +151,7 @@
         "properties": {
           "output_fmt": {
             "title": "Output Format",
-            "description": "Format of the published recalibrated alignment. CRAM is smaller.",
+            "description": "Format of the published alignment. CRAM is smaller.",
             "type": "string",
             "enum": [
               "bam",
@@ -117,12 +199,6 @@
         "title": "Quality-Score Quantization Options",
         "type": "object",
         "properties": {
-          "quantize_quals_enabled": {
-            "title": "Quantize Quality Scores",
-            "description": "Replicate GATK ApplyBQSR static quantization. Turn off to publish the unquantized recalibrated file.",
-            "type": "boolean",
-            "default": true
-          },
           "static_quantized_quals": {
             "title": "Static Quantization Bins",
             "description": "Comma-separated Phred values (GATK --static-quantized-quals).",
@@ -145,21 +221,7 @@
             "default": false
           }
         },
-        "description": "Collapses base qualities into a few bins to shrink the output; see the README lookup table for how scores map."
-      },
-      "resources": {
-        "title": "Resource Options",
-        "type": "object",
-        "properties": {
-          "applybqsr_gpus": {
-            "title": "GPUs for applying BQSR",
-            "type": "integer",
-            "default": 1,
-            "minimum": 1,
-            "maximum": 2,
-            "description": "1 or 2. Recommended: 2 for 60x and deeper coverage (about 20% faster, slightly cheaper); 1 for shallower samples."
-          }
-        }
+        "description": "Collapses base qualities into a few bins to shrink the output; see the README lookup table for how scores map. Used by the modes that quantize; ignored by Apply BQSR Only."
       }
     }
   },

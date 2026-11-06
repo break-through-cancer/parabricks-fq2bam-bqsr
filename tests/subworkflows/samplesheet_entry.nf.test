@@ -11,6 +11,10 @@ nextflow_function {
         when { function { "input[0] = \"\${projectDir}/tests/fixtures/samplesheet_to_samples/valid.csv\"" } }
         then { assert function.result == 'alignment' }
     }
+    test("alignment header without recal_table is the quantize entry") {
+        when { function { "input[0] = \"\${projectDir}/tests/fixtures/samplesheet_to_recalibrated/valid.csv\"" } }
+        then { assert function.result == 'quantize' }
+    }
     test("both kinds of column is an error") {
         when { function { "input[0] = \"\${projectDir}/tests/fixtures/fastq/both_entries.csv\"" } }
         then { assert function.failed; assert function.stdout.join('\n').contains('both FASTQ and alignment columns') }

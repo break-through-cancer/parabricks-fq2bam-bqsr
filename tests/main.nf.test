@@ -234,4 +234,48 @@ nextflow_pipeline {
             assert workflow.trace.tasks().size() == 0
         }
     }
+
+    test("quantize entry: recalibrated alignments go straight to QUANTIZE_QUALS, with no APPLYBQSR or read checks") {
+        when {
+            params {
+                input         = "${projectDir}/tests/fixtures/main_pipeline/quantize.csv"
+                genome        = 'null'
+                ref_fasta     = "${projectDir}/tests/fixtures/modules/reference.fasta"
+                ref_fasta_fai = "${projectDir}/tests/fixtures/modules/reference.fasta.fai"
+                outdir        = "${outputDir}/results"
+                output_fmt    = 'bam'
+            }
+        }
+        then {
+            assert workflow.success
+            def succeeded = workflow.trace.succeeded()*.name
+            assert succeeded.count { it.contains('PARABRICKS_APPLYBQSR') } == 0
+            assert succeeded.count { it.contains('QUANTIZE_QUALS') } == 2
+            assert succeeded.count { it.contains('SAMTOOLS_FINALIZE') } == 0
+            assert succeeded.count { it.startsWith('SAMTOOLS_STATS') } == 0
+            assert succeeded.count { it.startsWith('SAMTOOLS_FLAGSTAT') } == 2
+            ['SAMPLE_A', 'SAMPLE_B'].each { s ->
+                assert file("${outputDir}/results/preprocessing/recalibrated/${s}/${s}.recal.bam").exists()
+                assert file("${outputDir}/results/preprocessing/recalibrated/${s}/${s}.recal.bam.bai").exists()
+            }
+            assert file("${outputDir}/results/multiqc/multiqc_report.html").exists()
+        }
+    }
+
+    test("quantize entry with quantization disabled is an error: there is nothing to do") {
+        when {
+            params {
+                input                  = "${projectDir}/tests/fixtures/main_pipeline/quantize.csv"
+                genome                 = 'null'
+                ref_fasta              = "${projectDir}/tests/fixtures/modules/reference.fasta"
+                ref_fasta_fai          = "${projectDir}/tests/fixtures/modules/reference.fasta.fai"
+                outdir                 = "${outputDir}/results"
+                quantize_quals_enabled = false
+            }
+        }
+        then {
+            assert !workflow.success
+            assert workflow.stdout.join("\n").contains("only quantizes")
+        }
+    }
 }
