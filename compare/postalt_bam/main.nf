@@ -16,7 +16,7 @@ process MAKE_ALIGNMENT {
     publishDir { "${params.outdir}/preprocessing/recalibrated/${sample}" }, mode: 'copy'
 
     input:
-    tuple val(sample), path(alignment), path(alignment_index)
+    tuple val(sample), path(alignment, stageAs: 'input/*'), path(alignment_index, stageAs: 'input/*')
     tuple path(ref_fasta), path(ref_fai), path(alt_file)
 
     output:
