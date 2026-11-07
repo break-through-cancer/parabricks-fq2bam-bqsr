@@ -17,6 +17,21 @@
         "title": "Alignment",
         "type": "string",
         "description": "Optional S3 URI of one CRAM or BAM with its index beside it; used instead of the dataset's file listing."
+      },
+      "fmt": {
+        "title": "Output format",
+        "type": "string",
+        "enum": [
+          "cram",
+          "bam"
+        ],
+        "default": "cram",
+        "description": "Alignment format written."
+      },
+      "region": {
+        "title": "Contigs",
+        "type": "string",
+        "description": "Optional space-separated contig names to keep, for example chr6. Each contig's *_alt contigs are kept with it. Empty keeps the whole alignment."
       }
     }
   },

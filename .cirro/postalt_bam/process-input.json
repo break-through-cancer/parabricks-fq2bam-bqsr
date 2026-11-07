@@ -4,5 +4,7 @@
   "igenomes_base": "$.referencesBucketUri|/igenomes/",
   "postalt": "$.dataset.params.postalt",
   "samples": "$.dataset.params.samples",
-  "alignment": "$.dataset.params.alignment"
+  "alignment": "$.dataset.params.alignment",
+  "fmt": "$.dataset.params.fmt",
+  "region": "$.dataset.params.region"
 }
