@@ -1,0 +1,24 @@
+{
+  "form": {
+    "type": "object",
+    "properties": {
+      "postalt": {
+        "title": "Run postalt",
+        "type": "boolean",
+        "default": false,
+        "description": "Run alt-aware postalt (postalt_rs) on the alignment. Off writes a plain BAM conversion, for the comparison baseline."
+      },
+      "samples": {
+        "title": "Samples",
+        "type": "string",
+        "description": "Comma-separated sample names to convert; empty converts every alignment in the dataset."
+      },
+      "alignment": {
+        "title": "Alignment",
+        "type": "string",
+        "description": "Optional S3 URI of one CRAM or BAM with its index beside it; used instead of the dataset's file listing."
+      }
+    }
+  },
+  "ui": {}
+}
