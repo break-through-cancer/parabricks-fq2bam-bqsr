@@ -1,7 +1,13 @@
 {
   "form": {
     "type": "object",
-    "properties": {}
+    "properties": {
+      "samples": {
+        "title": "Samples",
+        "type": "string",
+        "description": "Comma-separated sample names to compare; empty compares every alignment in the dataset."
+      }
+    }
   },
   "ui": {}
 }
