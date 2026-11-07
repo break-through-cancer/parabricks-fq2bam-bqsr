@@ -29,14 +29,23 @@ def build_samplesheet(paths: Iterable[str], samples: Iterable[str] = ()) -> pd.D
     return pd.DataFrame(rows, columns=["sample", "alignment", "alignment_index"])
 
 
+def sources(ds, wanted):
+    explicit = str(ds.params.get("alignment") or "").strip()
+    if not explicit:
+        return list(ds.files["file"]), wanted
+    suffix = INDEX_SUFFIX[explicit.rsplit(".", 1)[-1]]
+    return [explicit, f"{explicit}.{suffix}"], []
+
+
 def main():
     from cirro.helpers.preprocess_dataset import PreprocessDataset
 
     ds = PreprocessDataset.from_running()
     ds.logger.info(f"dataset files: {ds.files.to_dict(orient='records')}")
     wanted = [x.strip() for x in str(ds.params.get("samples") or "").split(",") if x.strip()]
-    samplesheet = build_samplesheet(ds.files["file"], wanted)
-    ds.remove_param("samples", force=True)
+    samplesheet = build_samplesheet(*sources(ds, wanted))
+    for key in ("samples", "alignment"):
+        ds.remove_param(key, force=True)
     ds.logger.info(samplesheet.to_csv(index=False))
     samplesheet.to_csv(ds.params["input"], index=False)
 

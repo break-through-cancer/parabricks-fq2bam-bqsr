@@ -2,5 +2,6 @@
   "input": "$.dataset.s3|/config/manifest.csv",
   "outdir": "$.dataset.dataPath",
   "igenomes_base": "$.referencesBucketUri|/igenomes/",
-  "samples": "$.dataset.params.samples"
+  "samples": "$.dataset.params.samples",
+  "alignment": "$.dataset.params.alignment"
 }

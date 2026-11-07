@@ -6,6 +6,11 @@
         "title": "Samples",
         "type": "string",
         "description": "Comma-separated sample names to compare; empty compares every alignment in the dataset."
+      },
+      "alignment": {
+        "title": "Alignment",
+        "type": "string",
+        "description": "Optional S3 URI of one CRAM or BAM with its index beside it; used instead of the dataset's file listing."
       }
     }
   },
