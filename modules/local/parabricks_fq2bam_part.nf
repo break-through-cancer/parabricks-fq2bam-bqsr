@@ -4,7 +4,7 @@ include { fq2bamArgs; fq2bamResources } from './parabricks_fq2bam'
 process PARABRICKS_FQ2BAM_PART {
     tag "${meta.sample}:${meta.part}"
     stageInMode 'copy'
-    container 'nvcr.io/nvidia/clara/clara-parabricks:4.7.1-1'
+    container 'nvcr.io/nvidia/clara/clara-parabricks:4.8.0-1'
     cpus { fq2bamResources(params.fq2bam_gpus, params.fq2bam_memory_gb).cpus }
     memory { "${fq2bamResources(params.fq2bam_gpus, params.fq2bam_memory_gb).memory_gb * task.attempt} GB" }
 
@@ -26,7 +26,7 @@ process PARABRICKS_FQ2BAM_PART {
     set -euo pipefail
     ${pbrunFunction()}
     if command -v nvidia-smi >/dev/null 2>&1; then
-        echo "GPU: \$(nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader | paste -sd ';' -)" >&2
+        echo "GPU: \$(nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=csv,noheader | paste -sd ';' -)" >&2
     else
         echo "GPU: nvidia-smi not available" >&2
     fi
