@@ -1,11 +1,12 @@
 include { pbrunFunction; dedupeHdFunction } from './pbrun_wrapper'
+include { fq2bamResources } from './parabricks_fq2bam'
 
 process PARABRICKS_MARKDUP {
     tag "${meta.sample}"
     stageInMode 'copy'
     container 'nvcr.io/nvidia/clara/clara-parabricks:4.7.1-1'
     cpus 16
-    memory { "${64 * task.attempt} GB" }
+    memory { "${fq2bamResources(params.fq2bam_gpus, params.fq2bam_memory_gb).memory_gb * task.attempt} GB" }
 
     input:
     tuple val(meta), path(parts, stageAs: 'parts/*')
