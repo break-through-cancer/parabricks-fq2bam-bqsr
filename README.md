@@ -246,6 +246,13 @@ What changes in the alignment: reads' positions, flags, and duplicate marks stay
 supplementary alignments before relying on it. The published `.md` alignment (and the
 recalibrated one, when BQSR runs) is postalted. `READ_CHECKS` accounts for the added records.
 
+Validation so far covers structural variant callers only. On one tumor-normal pair (chromosome 6 and
+its ALT contigs), five callers and a consensus step ran on the alignment with and without postalt.
+Manta and GRIDSS output did not change; SvABA and Delly lost low-support calls in the MHC, and the
+high-support consensus calls were retained. Read-level checks of the calls removed in the MHC found
+the same discordant-pair evidence in the normal sample, with no split reads. SNV and indel callers
+have not been compared, and CRAM input to the callers was not tested.
+
 For FASTQs that were already recalibrated when first aligned, run without known sites (or
 with `--apply_bqsr false`): postalt then feeds quantization or the final conversion directly.
 Set `--quantize_quals_enabled false` as well if the qualities should stay untouched.
