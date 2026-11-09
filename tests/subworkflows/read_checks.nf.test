@@ -51,4 +51,17 @@ nextflow_function {
         when { function { "input[0] = [sample: 'S', fastq_reads: null, before_records: 13L, final_primary: 10L, final_records: 13L]" } }
         then { assert function.result == [] }
     }
+    test("records added by postalt are accounted for") {
+        function "readCheckFailures"
+        when { function { "input[0] = [sample: 'S', fastq_reads: 10L, before_records: 13L, added_records: 5L, final_primary: 10L, final_records: 18L]" } }
+        then { assert function.result == [] }
+    }
+    test("a record count that ignores the postalt additions fails and names them") {
+        function "readCheckFailures"
+        when { function { "input[0] = [sample: 'S', fastq_reads: 10L, before_records: 13L, added_records: 5L, final_primary: 10L, final_records: 13L]" } }
+        then {
+            assert function.result.size() == 1
+            assert function.result[0].contains('plus 5 added by postalt') && function.result[0].contains('(13)')
+        }
+    }
 }

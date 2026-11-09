@@ -17,6 +17,9 @@ FASTP (per lane: read counts, read QC,           │
 PARABRICKS_FQ2BAM (per sample, GPU:              │
   alignment, duplicate marking, BQSR table)      │
       │                                          │
+POSTALT (optional, --postalt: alt-aware MAPQ,    │
+  CPU, only the reads it can change)             │
+      │                                          │
       ├─ known sites, apply_bqsr ─▶ PARABRICKS_APPLYBQSR (GPU, genome-wide) ◀─┘
       │                        │
       │                QUANTIZE_QUALS or SAMTOOLS_FINALIZE
@@ -180,6 +183,8 @@ the better choice at that memory tier: same cost, faster alignment.
 | `--fq2bam_intermediate_fmt` | `bam` | Format of the duplicate-marked alignment passed from fq2bam (or markdup) to applybqsr: `bam` or `cram`. Not published; final outputs follow `--output_fmt`. Not shown on the Cirro form. |
 | `--fq2bam_memory_gb` | unset | Override `fq2bam`'s first-attempt host memory in GB (16–768); retries multiply it by the attempt number and `--memory-limit` stays at half. Unset: 44 GB per GPU, at least 64. See *Settings by sequencing depth*. |
 | `--apply_bqsr` | `true` | FASTQ entry with known sites: run `applybqsr` (and quantization) in this same run. `false` aligns only, publishing the markduplicates alignment and BQSR table as this run's output, to apply BQSR later with a separate alignment-entry run against them. No effect without known sites, or on the alignment entry (which always applies BQSR). |
+| `--postalt` | `false` | FASTQ entry: run `postalt_rs` (a port of `bwa-postalt.js`) after fq2bam on the reads it can change; see *Alt-aware postalt*. Needs a `*.alt` file in the BWA index directory. |
+| `--postalt_container` | `ghcr.io/break-through-cancer/parabricks-fq2bam-bqsr-postalt:0.2.0` | Postalt image (samtools, `postalt_rs`); see `tools/postalt/`. |
 | `--output_fmt` | `bam` | `bam` or `cram`. |
 | `--cram_version` | `3.0` | CRAM version for CRAM output. `3.0` is readable by essentially all tools; `3.1` is smaller, but older HTSlib builds and htsjdk-based tools may not read it, and mosdepth coverage QC is skipped. |
 | `--publish_markduplicates` | `false` | FASTQ entry with known sites only: also publish the pre-BQSR, duplicate-marked alignment as an indexed file in `--output_fmt`, alongside the BQSR table that's already published there. Lets a later alignment-entry run apply BQSR without repeating alignment. No effect without known sites. |
@@ -205,6 +210,49 @@ When fq2bam aligns fastp's output, it waits for fastp to finish (a CPU task; no 
 held meanwhile). fastp runs with 16 threads, the most fastp 0.24 uses, and fast output
 compression (`-z 1`).
 
+### Alt-Aware Postalt
+
+The iGenomes GATK GRCh38 BWA index ships a `.alt` file, and fq2bam's BWA reads it (the
+"Read 3171 alt contigs" line in the fq2bam log), but nothing runs BWA's `bwa-postalt.js` step.
+Without it, a read that maps equally well to a primary contig and its ALT haplotype keeps an
+unadjusted MAPQ. `--postalt true` runs `postalt_rs`, a Rust port of `bwa-postalt.js` (r985), on the
+duplicate-marked alignment, between fq2bam (or markdup) and applybqsr:
+
+1. Reads whose name has a record on, or an `XA` hit on, a contig named in the `.alt` file
+   are selected in one pass over the alignment. The `.alt` file lists `_alt`, `HLA-` and
+   `_decoy` contigs, and postalt treats all three as ALT, so a read whose supplementary
+   alignment lands on a decoy is selected too. The run stops if the `.alt` file lists a
+   contig outside those three name classes.
+2. Selected and unselected records are split in one more pass. Unselected records are
+   unchanged by postalt, by its own logic.
+3. The selected records are grouped by read name, run through `postalt_rs` (parallel
+   processes), sorted, and merged back into the alignment.
+
+The pipeline uses `postalt_rs` instead of the original script because the original, run under
+the current `k8` interpreter, leaves the sequence and quality of the generated opposite-strand
+records unreversed. On two samples that was 8.3% and 9.0% of the generated records. `postalt_rs`
+was correct on all of them, matched the script byte for byte in its `--k8-1.2-compat` mode, and
+used about a tenth of the CPU time.
+
+On one 451-million-record sample (an 11.7 GB CRAM) this selected 5% of the records, took about
+30 minutes on 10 CPUs, and a postalt run over a random 2% of the unselected names changed
+nothing. The step requests 16 CPUs and 32 GB (more memory on retry); scratch use was about six
+times the input alignment.
+
+What changes in the alignment: reads' positions, flags, and duplicate marks stay as they are
+(so duplicates are not re-marked); MAPQ drops or rises for reads postalt re-scores, with an
+`om` tag holding the original; and supplementary records are added on ALT and decoy contigs
+(`lt` tag), 3% more records on the sample above. Check that your downstream callers accept
+supplementary alignments before relying on it. The published `.md` alignment (and the
+recalibrated one, when BQSR runs) is postalted. `READ_CHECKS` accounts for the added records.
+
+For FASTQs that were already recalibrated when first aligned, run without known sites (or
+with `--apply_bqsr false`): postalt then feeds quantization or the final conversion directly.
+Set `--quantize_quals_enabled false` as well if the qualities should stay untouched.
+
+Postalt runs on the FASTQ entry only; the alignment entries do not carry the `XA` tags it
+needs. Build, test and pinned versions: `tools/postalt/README.md`.
+
 ### Outputs
 
 ```
@@ -213,7 +261,8 @@ preprocessing/markduplicates/<s>/<s>.md.<cram|bam> (+ index)    no known sites, 
 preprocessing/recal_table/<s>/<s>.table                          FASTQ entry with known sites
 preprocessing/fastp/<s>/                                         --save_trimmed only
 reports/fastp/<s>/, reports/markduplicates/<s>/, reports/parabricks_qc/<s>/,
-reports/samtools/<s>/ (<s>.stats, <s>.flagstat), reports/mosdepth/<s>/, reports/quantize/<s>/
+reports/samtools/<s>/ (<s>.stats, <s>.flagstat), reports/mosdepth/<s>/, reports/quantize/<s>/,
+reports/postalt/<s>/<s>.md.postalt.json                          --postalt only
 multiqc/multiqc_report.html
 pipeline_info/
 ```
@@ -268,6 +317,12 @@ under the same name first:
 docker build --platform linux/amd64 -t ghcr.io/break-through-cancer/parabricks-fq2bam-bqsr:0.1.2 tools/quantize_quals
 ```
 
+The postalt tool has its own container and tests (`tools/postalt/`):
+
+```bash
+make -C tools/postalt test     # builds the linux/amd64 image and runs the fixture tests inside it
+```
+
 Output content is decoded inside nf-test with the
 [nft-bam](https://github.com/nvnieuwk/nft-bam) plugin. All fixtures are small synthetic
 files (`tests/fixtures/make_fixtures.sh` regenerates the genome and FASTQ fixtures).
@@ -288,7 +343,7 @@ on-demand GPU queue (`PW_ONDEMAND_JOB_QUEUE`) with retries on resource-related e
 **FASTQ form:** genome source (iGenomes GATK.GRCh38, or a custom genome via a BWA index
 dataset plus known-sites/intervals from the references library), output format, `apply_bqsr`
 (hides quantization when off), quantization, trimming, single-end duplicate marking, optical
-pixel distance, alignment GPUs, low-memory mode and an fq2bam memory override. A
+pixel distance, alt-aware postalt (off by default), alignment GPUs, low-memory mode and an fq2bam memory override. A
 `fastq_singleton` column in the dataset's samplesheet adds that file to the sample as a
 single-end lane, resolved next to the sample's read 1.
 

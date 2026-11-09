@@ -108,7 +108,21 @@ def intervalContigs(Object path) {
     contigs
 }
 
-def checkReferences(Map refs, boolean fastqEntry) {
+def altFiles(Map refs) {
+    def found = file("${refs.bwa_index.toString().replaceAll('/+$', '')}/*.alt")
+    def alts = found instanceof List ? found : [found].findAll { it.exists() }
+    alts
+}
+
+def altContigs(Object path) {
+    def names = [] as Set
+    toPath(path).eachLine { line ->
+        if (!line.startsWith('@') && line.count('\t') >= 10) names << line.tokenize('\t')[0]
+    }
+    names
+}
+
+def checkReferences(Map refs, boolean fastqEntry, boolean postalt = false) {
     def errors = []
     def warnings = []
     def fai = faiContigs(refs.ref_fasta_fai)
@@ -123,6 +137,19 @@ def checkReferences(Map refs, boolean fastqEntry) {
             errors << "BWA index ${refs.bwa_index}: expected exactly one *.amb file, found ${ambs.size()}"
         } else if (annContigs(ambs[0].resolveSibling(ambs[0].name.replaceAll(/\.amb$/, '.ann'))) != fai) {
             errors << "BWA index ${refs.bwa_index} does not match ${refs.ref_fasta}: contig names or lengths differ"
+        }
+    }
+    if (postalt && refs.bwa_index) {
+        def alts = altFiles(refs)
+        if (alts.size() != 1) {
+            errors << "--postalt needs exactly one *.alt file in the BWA index ${refs.bwa_index} (the contigs bwa-postalt.js treats as ALT); found ${alts.size()}"
+        } else {
+            def names = altContigs(alts[0])
+            def unknown = names.findAll { !(it ==~ /.*_alt|HLA-.*|.*_decoy/) }
+            def absent = names.findAll { !fai.containsKey(it) }
+            if (!names) errors << "ALT file ${alts[0]} lists no contigs"
+            if (unknown) errors << "ALT file ${alts[0]} lists ${unknown.size()} contigs outside the _alt, HLA- and _decoy name classes (e.g. ${unknown.take(3).join(', ')}); postalt cannot select reads that touch them"
+            if (absent) errors << "ALT file ${alts[0]} lists ${absent.size()} contigs that are not in ${refs.ref_fasta} (e.g. ${absent.take(3).join(', ')})"
         }
     }
     refs.known_sites.each { vcf ->

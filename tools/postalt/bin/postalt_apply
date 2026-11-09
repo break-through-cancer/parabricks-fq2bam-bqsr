@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Alt-aware postalt for a coordinate-sorted BAM/CRAM: runs postalt_rs (a bwa-postalt.js r985 port) on only the reads it can change
+# and merges the result back. A name is selected when any of its records lies on, or has an XA hit on, a
+# contig named in the .alt file (_alt, HLA-*, _decoy), which is the script's own has_alt condition.
+set -euo pipefail
+
+usage() { echo "usage: postalt_apply --in FILE --ref FASTA --alt ALT --out PREFIX [--fmt bam|cram] [--cram-version V] [--threads N] [--mem-gb G]" >&2; exit 2; }
+FMT=bam; CRAMV=3.0; T=8; MEM=16
+while [ $# -gt 0 ]; do
+  case $1 in
+    --in) IN=$2;; --ref) REF=$2;; --alt) ALT=$2;; --out) OUT=$2;; --fmt) FMT=$2;;
+    --cram-version) CRAMV=$2;; --threads) T=$2;; --mem-gb) MEM=$2;; *) usage;;
+  esac
+  shift 2
+done
+: "${IN:?}" "${REF:?}" "${ALT:?}" "${OUT:?}"
+case $FMT in bam) IDX=bai; OFMT=bam;; cram) IDX=crai; OFMT="cram,version=$CRAMV";; *) usage;; esac
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+TOOLS=${POSTALT_TOOLS:-$HERE/../lib/postalt_tools.py}
+POSTALT=${POSTALT_BIN:-postalt_rs}
+W=$(mktemp -d "${TMPDIR:-.}/postalt_work.XXXXXX")
+trap 'rm -rf "$W"' EXIT
+log() { echo "postalt_apply: $(date +%T) $*" >&2; }
+py() { python3 -I "$TOOLS" "$@"; }
+
+SORT_S=$(( MEM / 4 )); [ "$SORT_S" -ge 1 ] || SORT_S=1
+SORT_M=$(( MEM * 1024 / (T * 2) )); [ "$SORT_M" -ge 256 ] || SORT_M=256
+
+log "checking ALT file"
+py check-alt "$ALT" "${REF}.fai"
+
+log "selecting names"
+samtools view --no-PG -@ "$T" -T "$REF" \
+  -e '(rname =~ "_alt$|^HLA-|_decoy$") || ([XA] =~ "_alt,|_decoy,|(^|;)HLA-")' "$IN" \
+  | cut -f1 | LC_ALL=C sort -u -S "${SORT_S}G" -T "$W" > "$W/names.txt"
+NAMES=$(wc -l < "$W/names.txt" | tr -d ' ')
+log "selected $NAMES names"
+
+log "splitting selected and unselected records"
+samtools view --no-PG -@ "$T" -T "$REF" -N "$W/names.txt" -U "$W/rest.bam" --output-fmt bam,level=1 -o "$W/sel.bam" "$IN"
+SEL_IN=$(samtools view -c -@ "$T" "$W/sel.bam")
+K=$(( (SEL_IN + 999999) / 1000000 )); [ "$K" -ge $(( T * 2 )) ] || K=$(( T * 2 ))
+PJ=$T; [ "$PJ" -le 8 ] || PJ=8
+
+log "partitioning $SEL_IN records into $K groups"
+samtools view --no-PG -@ "$T" -h "$W/sel.bam" | py partition "$K" "$W/part"
+rm -f "$W/sel.bam"
+
+log "running postalt_rs"
+run_part() {
+  { cat "$W/part.header.sam"; py order < "$W/part.$1.sam"; } \
+    | "$POSTALT" -j 1 "$ALT" 2> "$W/post.$1.err" | grep -v '^@' > "$W/post.$1.body.sam"
+  rm -f "$W/part.$1.sam"
+}
+export -f run_part py; export W TOOLS POSTALT ALT
+seq 0 $((K - 1)) | xargs -P "$PJ" -I{} bash -c 'run_part {}'
+cat "$W"/post.*.err >&2 || true
+
+log "collecting statistics"
+py stats "$NAMES" "$SEL_IN" "$W"/post.*.body.sam > "$OUT.postalt.json"
+ADDED=$(python3 -I -c "import json,sys; print(json.load(open(sys.argv[1]))['added_records'])" "$OUT.postalt.json")
+echo "$ADDED" > "$OUT.postalt_added.txt"
+python3 -I - "$OUT.postalt.json" "$OUT" > "$OUT.postalt_mqc.tsv" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1]))
+sample = sys.argv[2].rsplit("/", 1)[-1].split(".md")[0]
+print("# id: 'postalt'\n# section_name: 'Alt-aware postalt'\n# plot_type: 'table'")
+cols = ["selected_names", "selected_records", "added_records", "with_om_tag", "mapq_decreased", "mapq_increased", "mapq0_before", "mapq0_after"]
+print("Sample\t" + "\t".join(cols))
+print(sample + "\t" + "\t".join(str(s[c]) for c in cols))
+PY
+
+log "sorting postalt records"
+HDR_IN=$W/header.in.sam; HDR_OUT=$W/header.out.sam
+samtools view -H "$W/rest.bam" > "$HDR_IN"
+# Parabricks leaves PG tags on reads without an @PG line; merge drops such tags unless the header defines them.
+set +o pipefail
+samtools view "$W/rest.bam" | awk 'NR > 200000 { exit } { for (i = 12; i <= NF; i++) if ($i ~ /^PG:Z:/) print substr($i, 6) }' | sort -u > "$W/pg_used.txt"
+set -o pipefail
+while IFS= read -r id; do
+  grep -q -F -e "$(printf '@PG\tID:%s\t' "$id")" -e "$(printf '@PG\tID:%s$' "$id")" "$HDR_IN" || printf '@PG\tID:%s\tPN:%s\n' "$id" "$id" >> "$HDR_IN"
+done < "$W/pg_used.txt"
+cp "$HDR_IN" "$HDR_OUT"
+printf '@CO\tID:postalt\tpostalt_rs (bwa-postalt.js r985); selection=XA/rname in _alt,HLA-,_decoy; alt=%s\n' "$(md5sum "$ALT" 2>/dev/null | cut -d' ' -f1 || md5 -q "$ALT")" >> "$HDR_OUT"
+{ cat "$W/part.header.sam"; cat "$W"/post.*.body.sam; } \
+  | samtools sort --no-PG -@ "$T" -m "${SORT_M}M" -T "$W/sort" -O bam,level=1 -o "$W/post.sorted.bam" -
+rm -f "$W"/post.*.body.sam
+samtools reheader "$HDR_IN" "$W/post.sorted.bam" > "$W/post.rh.bam"
+
+log "merging"
+samtools merge --no-PG -@ "$T" -f -c -p -h "$HDR_OUT" --reference "$REF" -O "$OFMT" --write-index \
+  "$OUT.$FMT##idx##$OUT.$FMT.$IDX" <(samtools reheader "$HDR_IN" "$W/rest.bam") "$W/post.rh.bam"
+log "done: $ADDED records added"

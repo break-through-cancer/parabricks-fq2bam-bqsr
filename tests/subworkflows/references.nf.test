@@ -111,4 +111,55 @@ nextflow_function {
         when { function { "input[0] = \"\${projectDir}/tests/fixtures/genome/known_sites_nocontig.vcf.gz\"" } }
         then { assert (function.result.contigs as Set) == (['chrT'] as Set); assert function.result.complete == false }
     }
+    test("postalt: a matching .alt file passes the checks") {
+        function "checkReferences"
+        when { function { """
+            def g = "\${projectDir}/tests/fixtures/genome_alt"
+            input[0] = [ref_fasta: "\$g/reference.fasta", ref_fasta_fai: "\$g/reference.fasta.fai", bwa_index: "\$g/bwa", known_sites: [], intervals: null]
+            input[1] = true
+            input[2] = true
+        """ } }
+        then { assert function.result.errors == [] }
+    }
+    test("postalt: an index without a .alt file is an error that names the index") {
+        function "checkReferences"
+        when { function { """
+            def g = "\${projectDir}/tests/fixtures/genome"
+            input[0] = [ref_fasta: "\$g/reference.fasta", ref_fasta_fai: "\$g/reference.fasta.fai", bwa_index: "\$g/bwa", known_sites: [], intervals: null]
+            input[1] = true
+            input[2] = true
+        """ } }
+        then {
+            assert function.result.errors.size() == 1
+            assert function.result.errors[0].contains('exactly one *.alt file') && function.result.errors[0].contains('genome/bwa')
+        }
+    }
+    test("postalt: an unrecognized contig class and a contig missing from the FASTA are both reported") {
+        function "checkReferences"
+        when { function { """
+            def g = "\${projectDir}/tests/fixtures/genome_alt"
+            input[0] = [ref_fasta: "\$g/reference.fasta", ref_fasta_fai: "\$g/reference.fasta.fai", bwa_index: "\$g/bwa_badalt", known_sites: [], intervals: null]
+            input[1] = true
+            input[2] = true
+        """ } }
+        then {
+            assert function.result.errors.size() == 2
+            assert function.result.errors.any { it.contains('outside the _alt, HLA- and _decoy name classes') && it.contains('chrT_hap1') }
+            assert function.result.errors.any { it.contains('not in') && it.contains('chrT_hap1') }
+        }
+    }
+    test("postalt off: the .alt file is not inspected") {
+        function "checkReferences"
+        when { function { """
+            def g = "\${projectDir}/tests/fixtures/genome_alt"
+            input[0] = [ref_fasta: "\$g/reference.fasta", ref_fasta_fai: "\$g/reference.fasta.fai", bwa_index: "\$g/bwa_badalt", known_sites: [], intervals: null]
+            input[1] = true
+        """ } }
+        then { assert function.result.errors == [] }
+    }
+    test("altFiles returns the single .alt file next to the BWA index") {
+        function "altFiles"
+        when { function { "input[0] = [bwa_index: \"\${projectDir}/tests/fixtures/genome_alt/bwa/\"]" } }
+        then { assert function.result.size() == 1 && function.result[0].toString().endsWith('/genome_alt/bwa/reference.fasta.64.alt') }
+    }
 }

@@ -278,4 +278,21 @@ nextflow_pipeline {
             assert workflow.stdout.join("\n").contains("only quantizes")
         }
     }
+    test("postalt on the alignment entry is rejected before any task") {
+        when {
+            params {
+                input         = "${projectDir}/tests/fixtures/main_pipeline/samplesheet.csv"
+                genome        = 'null'
+                ref_fasta     = "${projectDir}/tests/fixtures/modules/reference.fasta"
+                ref_fasta_fai = "${projectDir}/tests/fixtures/modules/reference.fasta.fai"
+                outdir        = "${outputDir}/results"
+                postalt       = true
+            }
+        }
+        then {
+            assert workflow.failed
+            assert workflow.stdout.join('\n').contains('FASTQ entry only')
+            assert workflow.trace.tasks().size() == 0
+        }
+    }
 }
