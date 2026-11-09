@@ -35,6 +35,18 @@ decoy supplementary alignment and `pa < 1` far from any ALT locus.
 samtools and htslib 1.22.1, checked against SHA-256 values in the Dockerfile, and `postalt_rs` built
 locked from bsbludwig/postalt_rs commit `b48e8b3` (GPL-3.0). The image is built for linux/amd64.
 
+## Licensing
+
+`postalt_rs` is GPL-3.0. The image contains its binary, so publishing the image distributes that
+program. The corresponding source is the pinned commit above, and the image carries the license and
+notice files in `/usr/share/doc/postalt_rs/` with a source link in the
+`io.github.break-through-cancer.postalt_rs.source` label. samtools and htslib are MIT-licensed, with
+their license files in `/usr/local/share/doc/`.
+
+The pipeline runs `postalt_rs` as a separate process through standard input, standard output, and
+command-line arguments. `postalt_apply` and `lib/postalt_tools.py` call it that way and do not link
+against it, so the GPL covers `postalt_rs` and not the pipeline code.
+
 ## Why not the original script
 
 `bwa-postalt.js` run under k8 1.x does not reverse-complement SEQ or reverse QUAL on the opposite-strand

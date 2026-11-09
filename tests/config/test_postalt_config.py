@@ -23,6 +23,13 @@ def test_every_download_in_the_postalt_image_is_checksummed():
     assert "cargo build --release --locked" in dockerfile
 
 
+def test_postalt_image_ships_the_gpl_notices_and_names_its_source():
+    dockerfile = (ROOT / "tools" / "postalt" / "Dockerfile").read_text()
+    assert "/src/LICENSE /src/NOTICE.md /usr/share/doc/postalt_rs/" in dockerfile
+    assert 'org.opencontainers.image.licenses="GPL-3.0 AND MIT"' in dockerfile
+    assert "postalt_rs.source=" in dockerfile and "${POSTALT_RS_COMMIT}" in dockerfile
+
+
 def test_fq2bam_and_markdup_stop_publishing_md_directly_when_postalt_runs():
     # With postalt on, the published .md alignment is POSTALT's output, not fq2bam's.
     text = (ROOT / "conf" / "modules.config").read_text()

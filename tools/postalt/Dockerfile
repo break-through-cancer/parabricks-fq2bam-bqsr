@@ -30,13 +30,20 @@ RUN curl -fsSL -o htslib.tar.bz2 "https://github.com/samtools/htslib/releases/do
     && make -j"$(nproc)" && make install \
     && cd ../samtools-${HTSLIB_VERSION} \
     && ./configure --prefix=/opt/samtools --with-htslib=/opt/samtools --without-curses \
-    && make -j"$(nproc)" && make install
+    && make -j"$(nproc)" && make install \
+    && mkdir -p /opt/samtools/share/doc/samtools /opt/samtools/share/doc/htslib \
+    && cp /tmp/samtools-${HTSLIB_VERSION}/LICENSE /opt/samtools/share/doc/samtools/LICENSE \
+    && cp /tmp/htslib-${HTSLIB_VERSION}/LICENSE /opt/samtools/share/doc/htslib/LICENSE
 
 FROM debian:bookworm-slim
 
+ARG POSTALT_RS_COMMIT=b48e8b374cd4fe632f8de8932d1f71c531532d6b
+
 LABEL org.opencontainers.image.source="https://github.com/break-through-cancer/parabricks-fq2bam-bqsr" \
       org.opencontainers.image.description="postalt_apply: alt-aware postalt_rs (a bwa-postalt.js r985 port, GPL-3.0) on the reads it can change (samtools 1.22.1)" \
-      org.opencontainers.image.version="0.2.0"
+      org.opencontainers.image.licenses="GPL-3.0 AND MIT" \
+      org.opencontainers.image.version="0.2.1" \
+      io.github.break-through-cancer.postalt_rs.source="https://github.com/bsbludwig/postalt_rs/tree/${POSTALT_RS_COMMIT}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         procps python3 zlib1g libbz2-1.0 liblzma5 libdeflate0 \
@@ -44,6 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=build /opt/samtools/ /usr/local/
 COPY --from=rsbuild /src/target/release/postalt_rs /usr/local/bin/postalt_rs
+COPY --from=rsbuild /src/LICENSE /src/NOTICE.md /usr/share/doc/postalt_rs/
 COPY lib/postalt_tools.py /opt/postalt/postalt_tools.py
 COPY bin/postalt_apply /usr/local/bin/postalt_apply
 ENV POSTALT_TOOLS=/opt/postalt/postalt_tools.py

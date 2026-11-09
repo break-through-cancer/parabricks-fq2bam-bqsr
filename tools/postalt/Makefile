@@ -1,4 +1,4 @@
-IMAGE ?= ghcr.io/break-through-cancer/parabricks-fq2bam-bqsr-postalt:0.2.0
+IMAGE ?= ghcr.io/break-through-cancer/parabricks-fq2bam-bqsr-postalt:0.2.1
 PLATFORM ?= linux/amd64
 
 .PHONY: build test
