@@ -302,4 +302,93 @@ nextflow_pipeline {
             assert workflow.trace.tasks().size() == 0
         }
     }
+
+    test("postalt with known sites: POSTALT between FQ2BAM and APPLYBQSR, report published") {
+        when { params {
+            input = "${projectDir}/tests/fixtures/main_pipeline/fastq.csv"; genome = 'null'
+            ref_fasta = "${projectDir}/tests/fixtures/genome_alt/reference.fasta"
+            bwa_index = "${projectDir}/tests/fixtures/genome_alt/bwa"
+            known_sites = "${projectDir}/tests/fixtures/genome/known_sites.vcf.gz"
+            intervals = "${projectDir}/tests/fixtures/genome/intervals.bed"
+            postalt = true
+            outdir = "${outputDir}/results"
+        } }
+        then {
+            assert workflow.success
+            def ok = workflow.trace.succeeded()*.name
+            assert ok.count { it.startsWith('PARABRICKS_FQ2BAM') } == 2
+            assert ok.count { it.startsWith('POSTALT') } == 2
+            assert ok.count { it.startsWith('PARABRICKS_APPLYBQSR') } == 2
+            ['S1', 'S2'].each { s ->
+                assert file("${outputDir}/results/preprocessing/recalibrated/${s}/${s}.recal.bam").exists()
+                assert file("${outputDir}/results/reports/postalt/${s}/${s}.md.postalt.json").exists()
+                assert !file("${outputDir}/results/preprocessing/markduplicates/${s}/${s}.md.bam").exists()
+            }
+        }
+    }
+    test("postalt, apply_bqsr false with matching formats: POSTALT publishes .md directly, fq2bam does not") {
+        when { params {
+            input = "${projectDir}/tests/fixtures/main_pipeline/fastq.csv"; genome = 'null'
+            ref_fasta = "${projectDir}/tests/fixtures/genome_alt/reference.fasta"
+            bwa_index = "${projectDir}/tests/fixtures/genome_alt/bwa"
+            known_sites = "${projectDir}/tests/fixtures/genome/known_sites.vcf.gz"
+            intervals = "${projectDir}/tests/fixtures/genome/intervals.bed"
+            postalt = true
+            apply_bqsr = false
+            outdir = "${outputDir}/results"
+        } }
+        then {
+            assert workflow.success
+            def ok = workflow.trace.succeeded()*.name
+            assert ok.count { it.startsWith('POSTALT') } == 2
+            assert ok.count { it.startsWith('PARABRICKS_APPLYBQSR') } == 0
+            assert ok.count { it.startsWith('SAMTOOLS_FINALIZE') } == 0
+            ['S1', 'S2'].each { s ->
+                assert file("${outputDir}/results/preprocessing/markduplicates/${s}/${s}.md.bam").exists()
+                assert file("${outputDir}/results/reports/postalt/${s}/${s}.md.postalt.json").exists()
+            }
+        }
+    }
+    test("postalt without known sites (already-recalibrated reads): POSTALT feeds quantization, no APPLYBQSR") {
+        when { params {
+            input = "${projectDir}/tests/fixtures/main_pipeline/fastq.csv"; genome = 'null'
+            ref_fasta = "${projectDir}/tests/fixtures/genome_alt/reference.fasta"
+            bwa_index = "${projectDir}/tests/fixtures/genome_alt/bwa"
+            postalt = true
+            outdir = "${outputDir}/results"
+        } }
+        then {
+            assert workflow.success
+            def ok = workflow.trace.succeeded()*.name
+            assert ok.count { it.startsWith('POSTALT') } == 2
+            assert ok.count { it.startsWith('PARABRICKS_APPLYBQSR') } == 0
+            assert ok.count { it.startsWith('QUANTIZE_QUALS') } == 2
+        }
+    }
+    test("postalt on an index without a .alt file stops the run before any task") {
+        when { params {
+            input = "${projectDir}/tests/fixtures/main_pipeline/fastq.csv"; genome = 'null'
+            ref_fasta = "${projectDir}/tests/fixtures/genome/reference.fasta"
+            bwa_index = "${projectDir}/tests/fixtures/genome/bwa"
+            postalt = true
+            outdir = "${outputDir}/results"
+        } }
+        then {
+            assert workflow.failed
+            assert workflow.stdout.join('\n').contains('exactly one *.alt file')
+            assert workflow.trace.tasks().size() == 0
+        }
+    }
+    test("postalt is off by default: no POSTALT task") {
+        when { params {
+            input = "${projectDir}/tests/fixtures/main_pipeline/fastq.csv"; genome = 'null'
+            ref_fasta = "${projectDir}/tests/fixtures/genome_alt/reference.fasta"
+            bwa_index = "${projectDir}/tests/fixtures/genome_alt/bwa"
+            outdir = "${outputDir}/results"
+        } }
+        then {
+            assert workflow.success
+            assert workflow.trace.succeeded()*.name.count { it.startsWith('POSTALT') } == 0
+        }
+    }
 }

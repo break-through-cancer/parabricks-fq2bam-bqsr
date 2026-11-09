@@ -3,7 +3,7 @@ nextflow.enable.dsl = 2
 include { SAMPLESHEET_TO_SAMPLES                    } from './subworkflows/local/samplesheet_to_samples/main'
 include { SAMPLESHEET_TO_FASTQS; samplesheetEntry   } from './subworkflows/local/samplesheet_to_fastqs/main'
 include { SAMPLESHEET_TO_RECALIBRATED               } from './subworkflows/local/samplesheet_to_recalibrated/main'
-include { resolveReferences; checkReferences; intervalsMessage } from './subworkflows/local/references/main'
+include { resolveReferences; checkReferences; intervalsMessage; altFiles } from './subworkflows/local/references/main'
 include { PREPARE_KNOWN_SITES                       } from './subworkflows/local/prepare_known_sites/main'
 include { READ_CHECKS; fastpReadCount               } from './subworkflows/local/read_checks/main'
 include { FASTP; fastpWritesReads                   } from './modules/local/fastp'
@@ -11,6 +11,7 @@ include { PARABRICKS_FQ2BAM                         } from './modules/local/para
 include { PARABRICKS_FQ2BAM_PART                    } from './modules/local/parabricks_fq2bam_part'
 include { PARABRICKS_MARKDUP                        } from './modules/local/parabricks_markdup'
 include { PARABRICKS_APPLYBQSR                      } from './modules/local/parabricks_applybqsr'
+include { POSTALT                                   } from './modules/local/postalt'
 include { QUANTIZE_QUALS; quantizeHistJson          } from './modules/local/quantize_quals'
 include { SAMTOOLS_FINALIZE                         } from './modules/local/samtools_finalize'
 include { SAMTOOLS_FINALIZE as SAMTOOLS_FINALIZE_RAW } from './modules/local/samtools_finalize'
@@ -25,7 +26,9 @@ workflow {
     validateParams()
     def entry = samplesheetEntry(params.input)
     def refs = resolveReferences(params)
-    def checks = checkReferences(refs, entry == 'fastq')
+    def postalt = params.postalt.toString() == 'true'
+    if (postalt && entry != 'fastq') error "--postalt applies to the FASTQ entry only: it needs the XA tags that fq2bam writes"
+    def checks = checkReferences(refs, entry == 'fastq', postalt)
     checks.warnings.each { log.warn it }
     if (checks.errors) error checks.errors.join('\n')
 
@@ -35,6 +38,8 @@ workflow {
     def applybqsr_direct = params.output_fmt == 'bam' && !quantize
     def use_direct_final = false
     def direct_final = channel.empty()
+    postalt_added = channel.empty()
+    postalt_qc = channel.empty()
 
     if (entry == 'fastq') {
         def bqsr = refs.known_sites as boolean
@@ -84,6 +89,16 @@ workflow {
         )
         aligned_cram = PARABRICKS_FQ2BAM.out.cram.mix(PARABRICKS_MARKDUP.out.cram)
         aligned_table = PARABRICKS_FQ2BAM.out.table.mix(PARABRICKS_MARKDUP.out.table)
+
+        if (postalt) {
+            POSTALT(
+                aligned_cram.map { meta, cram, _crai -> [meta, cram] },
+                ref_ch, channel.value(altFiles(refs)[0]), params.fq2bam_intermediate_fmt
+            )
+            aligned_cram = POSTALT.out.alignment
+            postalt_added = POSTALT.out.added.map { meta, added -> [meta.sample, added.text.trim() as long] }
+            postalt_qc = POSTALT.out.mqc
+        }
 
         // The pre-recalibration alignment is otherwise discarded once BQSR runs.
         if (apply_bqsr && params.publish_markduplicates.toString() == 'true') {
@@ -177,7 +192,8 @@ workflow {
         READ_CHECKS(
             SAMTOOLS_FLAGSTAT.out.flagstat.map { meta, s -> [[sample: meta.sample], s] },
             before_idxstats.map { meta, idx -> [[sample: meta.sample], idx] },
-            fastq_counts
+            fastq_counts,
+            postalt_added
         )
         read_checks_mqc = READ_CHECKS.out.mqc
     }
@@ -187,6 +203,7 @@ workflow {
             .mix(SAMTOOLS_FLAGSTAT.out.flagstat.map { _meta, flagstat -> flagstat })
             .mix(mosdepth_reports)
             .mix(quant_mqc)
+            .mix(postalt_qc)
             .mix(read_checks_mqc)
             .collect()
     )
@@ -197,6 +214,7 @@ def validateParams() {
     if (!(params.output_fmt in ['bam', 'cram'])) error "Invalid output_fmt '${params.output_fmt}': must be 'bam' or 'cram'"
     if (!(params.quantize_quals_enabled.toString() in ['true', 'false'])) error "Invalid quantize_quals_enabled '${params.quantize_quals_enabled}': must be true or false"
     if (!(params.publish_markduplicates.toString() in ['true', 'false'])) error "Invalid publish_markduplicates '${params.publish_markduplicates}': must be true or false"
+    if (!(params.postalt.toString() in ['true', 'false'])) error "Invalid postalt '${params.postalt}': must be true or false"
     if (!(params.apply_bqsr.toString() in ['true', 'false'])) error "Invalid apply_bqsr '${params.apply_bqsr}': must be true or false"
     if (!(params.cram_version.toString() in ['3.0', '3.1'])) error "Invalid cram_version '${params.cram_version}': must be '3.0' or '3.1'"
     if (!(params.poly_g_trimming in ['auto', 'on', 'off'])) error "Invalid poly_g_trimming '${params.poly_g_trimming}': must be 'auto', 'on' or 'off'"

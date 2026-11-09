@@ -299,6 +299,16 @@ def test_form_offers_publish_markduplicates_off_by_default_and_maps_it():
     assert mapping["publish_markduplicates"] == "$.dataset.params.publish_markduplicates"
 
 
+def test_form_offers_postalt_off_by_default_in_advanced_and_maps_it():
+    import json
+    here = pathlib.Path(__file__).parent
+    props = json.loads((here / "process-form.json").read_text())["form"]["properties"]
+    field = props["advanced"]["properties"]["postalt"]
+    assert field["type"] == "boolean" and field["default"] is False
+    mapping = json.loads((here / "process-input.json").read_text())
+    assert mapping["postalt"] == "$.dataset.params.advanced.postalt"
+
+
 def test_form_offers_apply_bqsr_on_by_default_and_maps_it():
     import json
     here = pathlib.Path(__file__).parent

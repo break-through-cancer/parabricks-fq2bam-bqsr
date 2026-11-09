@@ -3,18 +3,21 @@ workflow READ_CHECKS {
     final_flagstat  // [ meta, flagstat ] -- samtools flagstat -O tsv on the true final published file
     before_idxstats // [ meta, idxstats ]
     fastq_counts    // [ sample, long ] -- empty for the alignment entry
+    added_records   // [ sample, long ] -- supplementary records postalt added; empty when postalt is off
 
     main:
     finals = final_flagstat.map { meta, flagstat -> [meta.sample, samtoolsFlagstatCounts(flagstat)] }
     befores = before_idxstats.map { meta, idx -> [meta.sample, idxstatsTotal(idx)] }
     fastqs = fastq_counts.toList().map { rows -> rows.collectEntries { [(it[0]): it[1]] } }
+    addeds = added_records.toList().map { rows -> rows.collectEntries { [(it[0]): it[1]] } }
 
     results = finals
         .join(befores, failOnDuplicate: true, failOnMismatch: true)
         .combine(fastqs.map { [counts: it] })
-        .map { sample, fin, before, wrapper ->
+        .combine(addeds.map { [added: it] })
+        .map { sample, fin, before, wrapper, extra ->
             def c = [sample: sample, fastq_reads: wrapper.counts[sample], before_records: before,
-                     final_primary: fin.primary, final_records: fin.records]
+                     added_records: extra.added[sample] ?: 0L, final_primary: fin.primary, final_records: fin.records]
             def failures = readCheckFailures(c)
             if (failures) error failures.join('\n')
             log.info "Read checks passed for '${sample}': ${c.final_primary} primary reads, ${c.final_records} records"
@@ -62,8 +65,10 @@ def readCheckFailures(Map c) {
     if (c.fastq_reads != null && c.fastq_reads != c.final_primary) {
         f << "Sample '${c.sample}': FASTQ reads (${c.fastq_reads}) != final primary reads (${c.final_primary}). Likely causes: reads longer than fq2bam --max-read-length (480 bp) or zero-length reads."
     }
-    if (c.before_records != c.final_records) {
-        f << "Sample '${c.sample}': records before BQSR/finalize (${c.before_records}) != final records (${c.final_records})."
+    def added = c.added_records ?: 0L
+    if (c.before_records + added != c.final_records) {
+        f << "Sample '${c.sample}': records before BQSR/finalize (${c.before_records})" +
+            (added ? " plus ${added} added by postalt" : "") + " != final records (${c.final_records})."
     }
     f
 }

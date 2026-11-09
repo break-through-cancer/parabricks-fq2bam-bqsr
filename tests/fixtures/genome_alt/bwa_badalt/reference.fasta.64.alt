@@ -1,0 +1,6 @@
+@SQ	SN:chrT	LN:500
+@SQ	SN:chrT1_alt	LN:200
+@SQ	SN:chrUn_x_decoy	LN:100
+chrT1_alt	0	chrT	101	60	200M	*	0	0	*	*
+chrUn_x_decoy	4	*	0	0	*	*	0	0	*	*
+chrT_hap1	0	chrT	1	60	10M	*	0	0	*	*

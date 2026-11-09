@@ -193,6 +193,16 @@
                     "type": "boolean",
                     "default": true,
                     "description": "FASTQ entry with known sites: run applybqsr (and quantization) in this same run. false aligns only, publishing the markduplicates alignment and BQSR table as the run's output (quantization does not run, regardless of --quantize_quals_enabled); apply BQSR later with a separate alignment-entry run against them, choosing quantization then. No effect without known sites, or on the alignment entry (which always applies BQSR)."
+                },
+                "postalt": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "FASTQ entry: after fq2bam, run postalt_rs (a port of bwa-postalt.js) on the reads whose records or XA hits touch ALT, HLA or decoy contigs, lowering or raising their MAPQ and adding supplementary ALT records. Needs a <fasta>.alt file next to the BWA index (the iGenomes GATK.GRCh38 index has one). The alignment then gains supplementary records on ALT and decoy contigs; check that downstream callers accept them."
+                },
+                "postalt_container": {
+                    "type": "string",
+                    "description": "Postalt container image (samtools, postalt_rs).",
+                    "default": "ghcr.io/break-through-cancer/parabricks-fq2bam-bqsr-postalt:0.2.1"
                 }
             }
         },

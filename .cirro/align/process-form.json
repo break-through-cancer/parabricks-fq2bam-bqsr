@@ -403,6 +403,12 @@
             "type": "integer",
             "default": 100,
             "description": "Affects optical-duplicate metrics only. 2500 is usual for patterned flowcells."
+          },
+          "postalt": {
+            "title": "Alt-aware postalt (postalt_rs)",
+            "type": "boolean",
+            "default": false,
+            "description": "Adjusts MAPQ for reads that touch ALT, HLA or decoy contigs and adds supplementary ALT records. Needs a genome index with a .alt file (the built-in GATK.GRCh38 has one). The output gains supplementary records on ALT and decoy contigs; check that downstream callers accept them."
           }
         }
       }

@@ -87,3 +87,14 @@ cat > fastq/both_entries.csv <<CSV
 sample,lane,fastq_1,fastq_2,alignment,alignment_index,recal_table
 S1,1,$D/S1_L1_R1.fastq.gz,,x.bam,x.bam.bai,x.table
 CSV
+
+# Postalt reference fixtures: only the .amb/.ann/.alt files are read by the reference checks.
+mkdir -p genome_alt/bwa genome_alt/bwa_badalt
+cp ../../tools/postalt/tests/fixtures/ref.fa genome_alt/reference.fasta
+cp ../../tools/postalt/tests/fixtures/ref.fa.fai genome_alt/reference.fasta.fai
+for d in bwa bwa_badalt; do
+  printf '800 3 0\n' > genome_alt/$d/reference.fasta.64.amb
+  printf '800 3 11\n0 chrT (null)\n0 500 0\n0 chrT1_alt (null)\n500 200 0\n0 chrUn_x_decoy (null)\n700 100 0\n' > genome_alt/$d/reference.fasta.64.ann
+done
+cp ../../tools/postalt/tests/fixtures/ref.alt genome_alt/bwa/reference.fasta.64.alt
+{ cat ../../tools/postalt/tests/fixtures/ref.alt; printf 'chrT_hap1\t0\tchrT\t1\t60\t10M\t*\t0\t0\t*\t*\n'; } > genome_alt/bwa_badalt/reference.fasta.64.alt
