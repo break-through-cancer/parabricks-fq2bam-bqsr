@@ -3,7 +3,7 @@ include { pbrunFunction; dedupeHdFunction } from './pbrun_wrapper'
 process PARABRICKS_APPLYBQSR {
     tag "${meta.sample}"
     stageInMode 'copy'
-    container 'nvcr.io/nvidia/clara/clara-parabricks:4.7.1-1'
+    container 'nvcr.io/nvidia/clara/clara-parabricks:4.8.0-1'
     cpus 12
     memory { "${72 * task.attempt} GB" }
 
@@ -27,7 +27,7 @@ process PARABRICKS_APPLYBQSR {
     ${pbrunFunction()}
     ${dedupeHdFunction()}
     if command -v nvidia-smi >/dev/null 2>&1; then
-        echo "GPU: \$(nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader | paste -sd ';' -)" >&2
+        echo "GPU: \$(nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=csv,noheader | paste -sd ';' -)" >&2
     else
         echo "GPU: nvidia-smi not available" >&2
     fi
