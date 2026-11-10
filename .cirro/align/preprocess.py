@@ -77,7 +77,8 @@ def build_fastq_samplesheet(files: pd.DataFrame, samplesheet: pd.DataFrame, log)
         raise ValueError("No patient recorded in Cirro sample metadata for: " + ", ".join(missing_patient))
     wide["status"] = wide["sample"].map(meta["status"]).fillna(0).astype(int)
     wide = wide.sort_values(["sample", "lane", "fastq_1"]).reset_index(drop=True)
-    wide["lane"] = [str(i) for i in range(len(wide))]
+    # Per-sample numbering keeps a sample's read-group IDs the same whichever other samples share the run.
+    wide["lane"] = wide.groupby("sample").cumcount().astype(str)
     return wide[COLUMNS]
 
 
