@@ -92,7 +92,7 @@ workflow {
 
         if (postalt) {
             POSTALT(
-                aligned_cram.map { meta, cram, _crai -> [meta, cram] },
+                aligned_cram,
                 ref_ch, channel.value(altFiles(refs)[0]), params.fq2bam_intermediate_fmt
             )
             aligned_cram = POSTALT.out.alignment
