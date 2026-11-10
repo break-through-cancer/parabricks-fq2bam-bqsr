@@ -19,6 +19,11 @@ It changes a read only when the read's group (name and read end) has a record on
 selected name go through the script, everything else passes through untouched. The tool stops if the
 `.alt` file lists a contig outside those three name classes.
 
+The passes over the input (selecting names, then splitting records) run as parallel jobs over runs of whole
+contigs taken in header order, because `samtools view -e` evaluates the filter on one thread. The input
+needs an index beside it; without one, `postalt_apply` builds one in its work directory. The unselected
+slices are joined with `samtools cat`, so the merge sees the same record order as an unsliced pass.
+
 Selecting by genomic position instead is not exact: the script lowers the MAPQ of reads with a
 decoy supplementary alignment and `pa < 1` far from any ALT locus.
 

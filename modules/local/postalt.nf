@@ -5,7 +5,7 @@ process POSTALT {
     memory '32 GB'
 
     input:
-    tuple val(meta), path(alignment, stageAs: 'input/*')
+    tuple val(meta), path(alignment, stageAs: 'input/*'), path(index, stageAs: 'input/*')
     tuple path(ref_fasta), path(ref_fasta_fai)
     path alt_file
     val output_fmt

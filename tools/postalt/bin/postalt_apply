@@ -30,22 +30,74 @@ SORT_M=$(( MEM * 1024 / (T * 2) )); [ "$SORT_M" -ge 256 ] || SORT_M=256
 log "checking ALT file"
 py check-alt "$ALT" "${REF}.fai"
 
+SELECT='(rname =~ "_alt$|^HLA-|_decoy$") || ([XA] =~ "_alt,|_decoy,|(^|;)HLA-")'
+# samtools evaluates -e on one thread, so the passes over the input run as parallel jobs, each on a run of whole contigs.
+case $IN in
+  *.cram) [ -e "$IN.crai" ] && IDX_IN=$IN || IDX_IN=;;
+  *) if [ -e "$IN.bai" ] || [ -e "${IN%.bam}.bai" ]; then IDX_IN=$IN; else IDX_IN=; fi;;
+esac
+SRC=$IN
+if [ -z "$IDX_IN" ]; then
+  log "indexing input"
+  samtools index -@ "$T" "$IN" "$W/input.idx"
+  SRC="$IN##idx##$W/input.idx"
+fi
+
+samtools view -H "$IN" | awk -F'\t' -v OFS='\t' -v T="$T" '
+  $1 == "@SQ" { for (i = 2; i <= NF; i++) { if ($i ~ /^SN:/) n = substr($i, 4); if ($i ~ /^LN:/) l = substr($i, 4) } name[++c] = n; len[c] = l; total += l }
+  END {
+    target = total / (2 * T); s = 0; acc = 0
+    for (i = 1; i <= c; i++) {
+      printf "%s\t0\t%s\n", name[i], len[i] > sprintf("'"$W"'/slice.%04d.bed", s)
+      acc += len[i]
+      if (acc >= target) { close(sprintf("'"$W"'/slice.%04d.bed", s)); s++; acc = 0 }
+    }
+  }'
+ls "$W"/slice.*.bed > "$W/slices.txt"
+# Reads with no reference position follow the last contig in a coordinate-sorted file.
+echo '*' > "$W/slice.unplaced"
+
+run_select() {
+  i=$(basename "$1" .bed); i=${i#slice.}
+  samtools view --no-PG -@ 1 -T "$REF" -M -L "$1" -e "$SELECT" "$SRC" | cut -f1 | LC_ALL=C sort -u -S 256M -T "$W" > "$W/names.$i"
+}
+run_select_unplaced() {
+  samtools view --no-PG -@ 1 -T "$REF" -e "$SELECT" "$SRC" '*' | cut -f1 | LC_ALL=C sort -u -S 256M -T "$W" > "$W/names.zzzz"
+}
+run_split() {
+  i=$(basename "$1" .bed); i=${i#slice.}
+  samtools view --no-PG -@ 1 -T "$REF" -M -L "$1" -N "$W/names.txt" -U "$W/rest.$i.bam" --output-fmt bam,level=1 -o "$W/sel.$i.bam" "$SRC"
+  samtools view -c "$W/sel.$i.bam" > "$W/count.$i"
+}
+run_split_unplaced() {
+  samtools view --no-PG -@ 1 -T "$REF" -N "$W/names.txt" -U "$W/rest.zzzz.bam" --output-fmt bam,level=1 -o "$W/sel.zzzz.bam" "$SRC" '*'
+  samtools view -c "$W/sel.zzzz.bam" > "$W/count.zzzz"
+}
+export -f run_select run_select_unplaced run_split run_split_unplaced
+export W REF SRC SELECT
+
 log "selecting names"
-samtools view --no-PG -@ "$T" -T "$REF" \
-  -e '(rname =~ "_alt$|^HLA-|_decoy$") || ([XA] =~ "_alt,|_decoy,|(^|;)HLA-")' "$IN" \
-  | cut -f1 | LC_ALL=C sort -u -S "${SORT_S}G" -T "$W" > "$W/names.txt"
+xargs -P "$T" -I{} bash -c 'run_select {}' < "$W/slices.txt"
+run_select_unplaced
+LC_ALL=C sort -m -u -S "${SORT_S}G" -T "$W" "$W"/names.* > "$W/names.sorted"
+rm -f "$W"/names.[0-9]* "$W/names.zzzz"
+mv "$W/names.sorted" "$W/names.txt"
 NAMES=$(wc -l < "$W/names.txt" | tr -d ' ')
 log "selected $NAMES names"
 
+# Each splitter holds the name list in memory (about 2x the file size).
+NAME_GB=$(( ($(wc -c < "$W/names.txt") * 2 + 999999999) / 1000000000 ))
+PJ2=$(( MEM * 6 / 10 / (NAME_GB > 0 ? NAME_GB : 1) )); [ "$PJ2" -le "$T" ] || PJ2=$T; [ "$PJ2" -ge 1 ] || PJ2=1
 log "splitting selected and unselected records"
-samtools view --no-PG -@ "$T" -T "$REF" -N "$W/names.txt" -U "$W/rest.bam" --output-fmt bam,level=1 -o "$W/sel.bam" "$IN"
-SEL_IN=$(samtools view -c -@ "$T" "$W/sel.bam")
+xargs -P "$PJ2" -I{} bash -c 'run_split {}' < "$W/slices.txt"
+run_split_unplaced
+SEL_IN=$(cat "$W"/count.* | awk '{ n += $1 } END { print n }')
 K=$(( (SEL_IN + 999999) / 1000000 )); [ "$K" -ge $(( T * 2 )) ] || K=$(( T * 2 ))
 PJ=$T; [ "$PJ" -le 8 ] || PJ=8
 
 log "partitioning $SEL_IN records into $K groups"
-samtools view --no-PG -@ "$T" -h "$W/sel.bam" | py partition "$K" "$W/part"
-rm -f "$W/sel.bam"
+samtools cat --no-PG -o - "$W"/sel.*.bam | samtools view --no-PG -@ "$T" -h - | py partition "$K" "$W/part"
+rm -f "$W"/sel.*.bam
 
 log "running postalt_rs"
 run_part() {
@@ -73,10 +125,11 @@ PY
 
 log "sorting postalt records"
 HDR_IN=$W/header.in.sam; HDR_OUT=$W/header.out.sam
-samtools view -H "$W/rest.bam" > "$HDR_IN"
+FIRST_REST=$(ls "$W"/rest.*.bam | head -n 1)
+samtools view -H "$FIRST_REST" > "$HDR_IN"
 # Parabricks leaves PG tags on reads without an @PG line; merge drops such tags unless the header defines them.
 set +o pipefail
-samtools view "$W/rest.bam" | awk 'NR > 200000 { exit } { for (i = 12; i <= NF; i++) if ($i ~ /^PG:Z:/) print substr($i, 6) }' | sort -u > "$W/pg_used.txt"
+for f in "$W"/rest.[0-9]*.bam "$W/rest.zzzz.bam"; do samtools view "$f"; done | awk 'NR > 200000 { exit } { for (i = 12; i <= NF; i++) if ($i ~ /^PG:Z:/) print substr($i, 6) }' | sort -u > "$W/pg_used.txt"
 set -o pipefail
 while IFS= read -r id; do
   grep -q -F -e "$(printf '@PG\tID:%s\t' "$id")" -e "$(printf '@PG\tID:%s$' "$id")" "$HDR_IN" || printf '@PG\tID:%s\tPN:%s\n' "$id" "$id" >> "$HDR_IN"
@@ -87,8 +140,10 @@ printf '@CO\tID:postalt\tpostalt_rs (bwa-postalt.js r985); selection=XA/rname in
   | samtools sort --no-PG -@ "$T" -m "${SORT_M}M" -T "$W/sort" -O bam,level=1 -o "$W/post.sorted.bam" -
 rm -f "$W"/post.*.body.sam
 samtools reheader "$HDR_IN" "$W/post.sorted.bam" > "$W/post.rh.bam"
+samtools cat --no-PG -h "$HDR_IN" -o "$W/rest.rh.bam" "$W"/rest.*.bam
+rm -f "$W"/rest.[0-9]*.bam "$W/rest.zzzz.bam"
 
 log "merging"
 samtools merge --no-PG -@ "$T" -f -c -p -h "$HDR_OUT" --reference "$REF" -O "$OFMT" --write-index \
-  "$OUT.$FMT##idx##$OUT.$FMT.$IDX" <(samtools reheader "$HDR_IN" "$W/rest.bam") "$W/post.rh.bam"
+  "$OUT.$FMT##idx##$OUT.$FMT.$IDX" "$W/rest.rh.bam" "$W/post.rh.bam"
 log "done: $ADDED records added"

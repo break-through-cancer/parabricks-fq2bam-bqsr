@@ -29,6 +29,13 @@ postalt_apply --in reads.cram --ref "$HERE/fixtures/ref.fa" --alt "$HERE/fixture
 samtools quickcheck outc.cram
 [ -s outc.cram.crai ] || { echo "FAIL: no CRAM index" >&2; fail=1; }
 if ! diff <(norm < "$HERE/fixtures/expected.sam") <(samtools view -T "$HERE/fixtures/ref.fa" outc.cram | norm); then echo "FAIL: CRAM output differs from expected.sam" >&2; fail=1; fi
+# Contigs without reads ahead of the first read, and more threads than contigs: the per-contig slices must still keep every record and PG tag.
+{ samtools view -H reads.bam | sed -n '1p'; printf '@SQ\tSN:chr0\tLN:1000\n'; samtools view -H reads.bam | sed '1d'; samtools view reads.bam; } | samtools view -b -o lead.bam -
+samtools index lead.bam
+postalt_apply --in lead.bam --ref "$HERE/fixtures/ref.fa" --alt "$HERE/fixtures/ref.alt" --out lead --fmt bam --threads 8 --mem-gb 2
+samtools view lead.bam | sort > got_lead.sam
+if ! diff -u "$HERE/fixtures/expected.sam" got_lead.sam; then echo "FAIL: output differs with an empty leading contig" >&2; fail=1; fi
+[ "$(samtools view lead.bam | grep -c 'PG:Z:MarkDuplicates')" = "$(samtools view reads.bam | grep -c 'PG:Z:MarkDuplicates')" ] || { echo "FAIL: PG tags were dropped with an empty leading contig" >&2; fail=1; }
 # An .alt contig class the selector does not know must stop the run.
 printf 'chrT_hap1\t0\tchrT\t1\t60\t10M\t*\t0\t0\t*\t*\n' > bad.alt
 if postalt_apply --in reads.bam --ref "$HERE/fixtures/ref.fa" --alt bad.alt --out bad --threads 2 --mem-gb 2 2> bad.err; then echo "FAIL: unknown ALT class accepted" >&2; fail=1; fi
