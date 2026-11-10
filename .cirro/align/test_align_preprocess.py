@@ -33,10 +33,24 @@ def test_pairs_by_sample_index_with_status_default():
     meta = pd.DataFrame([{"sample": "S1", "patient": "P1", "status": 1}, {"sample": "S2", "patient": "P2"}])
     sheet = build_fastq_samplesheet(f, meta, LOG)
     assert list(sheet.columns) == ["patient", "sample", "status", "lane", "fastq_1", "fastq_2"]
-    assert sheet["lane"].tolist() == ["0", "1", "2"]
+    assert sheet["lane"].tolist() == ["0", "1", "0"]
     s2 = sheet[sheet["sample"] == "S2"].iloc[0]
     assert s2["patient"] == "P2" and s2["status"] == 0 and s2["fastq_2"] == ""
     assert sheet[sheet["sample"] == "S1"]["status"].tolist() == [1, 1]
+
+
+def test_lane_numbers_do_not_depend_on_the_other_samples_in_the_run():
+    rows = {
+        "S1": [(0, "S1", "1", 1, "s3://b/a_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/a_R2.fq.gz"),
+               (1, "S1", "2", 1, "s3://b/b_R1.fq.gz"), (1, "S1", "2", 2, "s3://b/b_R2.fq.gz")],
+        "S2": [(2, "S2", "1", 1, "s3://b/c_R1.fq.gz"), (2, "S2", "1", 2, "s3://b/c_R2.fq.gz")],
+    }
+    meta = pd.DataFrame([{"sample": "S1", "patient": "P1"}, {"sample": "S2", "patient": "P2"}])
+    alone = build_fastq_samplesheet(files(rows["S2"]), meta, LOG)
+    together = build_fastq_samplesheet(files(rows["S1"] + rows["S2"]), meta, LOG)
+    assert alone[["sample", "lane"]].values.tolist() == [["S2", "0"]]
+    assert together[together["sample"] == "S2"][["sample", "lane"]].values.tolist() == [["S2", "0"]]
+    assert together[together["sample"] == "S1"]["lane"].tolist() == ["0", "1"]
 
 
 def test_missing_patient_in_cirro_metadata_is_an_error():
