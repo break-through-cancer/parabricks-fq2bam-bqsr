@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Alt-aware postalt for a coordinate-sorted BAM/CRAM: runs postalt_rs (a bwa-postalt.js r985 port) on only the reads it can change
-# and merges the result back. A name is selected when any of its records lies on, or has an XA hit on, a
+# and merges the result back. Supplementary records leave without the duplicate flag, as Parabricks markdup and Sarek leave them. A name is selected when any of its records lies on, or has an XA hit on, a
 # contig named in the .alt file (_alt, HLA-*, _decoy), which is the script's own has_alt condition.
 set -euo pipefail
 
@@ -102,7 +102,8 @@ rm -f "$W"/sel.*.bam
 log "running postalt_rs"
 run_part() {
   { cat "$W/part.header.sam"; py order < "$W/part.$1.sam"; } \
-    | "$POSTALT" -j 1 "$ALT" 2> "$W/post.$1.err" | grep -v '^@' > "$W/post.$1.body.sam"
+    | "$POSTALT" -j 1 "$ALT" 2> "$W/post.$1.err" | grep -v '^@' \
+    | awk -F'\t' -v OFS='\t' '{ if (int($2 / 2048) % 2 == 1 && int($2 / 1024) % 2 == 1) $2 -= 1024; print }' > "$W/post.$1.body.sam"
   rm -f "$W/part.$1.sam"
 }
 export -f run_part py; export W TOOLS POSTALT ALT

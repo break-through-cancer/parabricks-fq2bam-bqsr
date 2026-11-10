@@ -24,6 +24,10 @@ contigs taken in header order, because `samtools view -e` evaluates the filter o
 needs an index beside it; without one, `postalt_apply` builds one in its work directory. The unselected
 slices are joined with `samtools cat`, so the merge sees the same record order as an unsliced pass.
 
+Duplicate flags: Parabricks `markdup` leaves supplementary records unflagged (checked on whole-genome runs), as
+Sarek's default coordinate-sorted GATK MarkDuplicates does, so the supplementary records postalt generates are
+written without the duplicate flag even when their primary is a duplicate. Primary records keep their flags.
+
 Selecting by genomic position instead is not exact: the script lowers the MAPQ of reads with a
 decoy supplementary alignment and `pa < 1` far from any ALT locus.
 

@@ -36,6 +36,13 @@ postalt_apply --in lead.bam --ref "$HERE/fixtures/ref.fa" --alt "$HERE/fixtures/
 samtools view lead.bam | sort > got_lead.sam
 if ! diff -u "$HERE/fixtures/expected.sam" got_lead.sam; then echo "FAIL: output differs with an empty leading contig" >&2; fail=1; fi
 [ "$(samtools view lead.bam | grep -c 'PG:Z:MarkDuplicates')" = "$(samtools view reads.bam | grep -c 'PG:Z:MarkDuplicates')" ] || { echo "FAIL: PG tags were dropped with an empty leading contig" >&2; fail=1; }
+# Parabricks markdup never flags supplementary records, so postalt must not leave any flagged: mark every primary a duplicate and check.
+{ samtools view -H reads.bam; samtools view reads.bam | awk -F'\t' -v OFS='\t' '{ if (int($2 / 2048) % 2 == 0) $2 += (int($2 / 1024) % 2 == 0 ? 1024 : 0); print }'; } | samtools view -b -o dup.bam -
+samtools index dup.bam
+postalt_apply --in dup.bam --ref "$HERE/fixtures/ref.fa" --alt "$HERE/fixtures/ref.alt" --out dupout --fmt bam --threads 2 --mem-gb 2
+[ "$(samtools view -c -f 2048 -f 1024 dupout.bam)" = 0 ] || { echo "FAIL: supplementary records carry the duplicate flag" >&2; fail=1; }
+[ "$(samtools view -c -f 1024 -F 2048 dupout.bam)" = "$(samtools view -c -f 1024 -F 2048 dup.bam)" ] || { echo "FAIL: a primary lost its duplicate flag" >&2; fail=1; }
+[ "$(samtools view -c -f 2048 dupout.bam)" -gt "$(samtools view -c -f 2048 dup.bam)" ] || { echo "FAIL: no supplementary records were generated in the duplicate test" >&2; fail=1; }
 # An .alt contig class the selector does not know must stop the run.
 printf 'chrT_hap1\t0\tchrT\t1\t60\t10M\t*\t0\t0\t*\t*\n' > bad.alt
 if postalt_apply --in reads.bam --ref "$HERE/fixtures/ref.fa" --alt bad.alt --out bad --threads 2 --mem-gb 2 2> bad.err; then echo "FAIL: unknown ALT class accepted" >&2; fail=1; fi
