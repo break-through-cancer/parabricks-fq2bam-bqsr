@@ -16,6 +16,11 @@ if ! diff -u "$HERE/fixtures/expected.sam" got.sam; then echo "FAIL: output diff
 samtools view -H out.bam | grep -q $'^@CO\tID:postalt' || { echo "FAIL: no @CO provenance line" >&2; fail=1; }
 [ "$(samtools view -H out.bam | grep -c $'^@CO\tID:postalt')" = 1 ] || { echo "FAIL: @CO line is not unique" >&2; fail=1; }
 [ "$(samtools view out.bam | grep -c 'PG:Z:MarkDuplicates')" = "$(samtools view reads.bam | grep -c 'PG:Z:MarkDuplicates')" ] || { echo "FAIL: PG tags were dropped" >&2; fail=1; }
+# The folded-in counters must match a recount from the output records.
+recount=$(samtools view out.bam | awk -F'\t' '{ for (i = 12; i <= NF; i++) if (substr($i, 1, 5) == "om:i:") { n++; if ($5 + 0 < substr($i, 6) + 0) d++; if ($5 + 0 > substr($i, 6) + 0) u++; break } } END { print n + 0, d + 0, u + 0 }')
+reported=$(python3 -c "import json; s = json.load(open('out.postalt.json')); print(s['with_om_tag'], s['mapq_decreased'], s['mapq_increased'])")
+[ "$recount" = "$reported" ] || { echo "FAIL: statistics differ from a recount ($reported vs $recount)" >&2; fail=1; }
+[ "$(python3 -c "import json; print(json.load(open('out.postalt.json'))['with_om_tag'])")" -gt 0 ] || { echo "FAIL: no om-tagged records in the statistics" >&2; fail=1; }
 # Generated records on the opposite strand must carry the reverse-complemented SEQ and reversed QUAL.
 # (bwa-postalt.js under k8 >= 1.0 leaves them unchanged.)
 while IFS=$'\t' read -r name seq qual; do
