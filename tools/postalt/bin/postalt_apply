@@ -103,7 +103,16 @@ log "running postalt_rs"
 run_part() {
   { cat "$W/part.header.sam"; py order < "$W/part.$1.sam"; } \
     | "$POSTALT" -j 1 "$ALT" 2> "$W/post.$1.err" | grep -v '^@' \
-    | awk -F'\t' -v OFS='\t' '{ if (int($2 / 2048) % 2 == 1 && int($2 / 1024) % 2 == 1) $2 -= 1024; print }' > "$W/post.$1.body.sam"
+    | awk -F'\t' -v OFS='\t' -v S="$W/post.$1.stats" '
+        { if (int($2 / 2048) % 2 == 1 && int($2 / 1024) % 2 == 1) $2 -= 1024
+          n++
+          for (i = 12; i <= NF; i++) if (substr($i, 1, 5) == "om:i:") {
+            om = substr($i, 6) + 0; mq = $5 + 0; w++
+            if (mq < om) d++; if (mq > om) u++; if (om == 0) b++; if (mq == 0) a++
+            break
+          }
+          print }
+        END { print n + 0, w + 0, d + 0, u + 0, b + 0, a + 0 > S }' > "$W/post.$1.body.sam"
   rm -f "$W/part.$1.sam"
 }
 export -f run_part py; export W TOOLS POSTALT ALT
@@ -111,7 +120,7 @@ seq 0 $((K - 1)) | xargs -P "$PJ" -I{} bash -c 'run_part {}'
 cat "$W"/post.*.err >&2 || true
 
 log "collecting statistics"
-py stats "$NAMES" "$SEL_IN" "$W"/post.*.body.sam > "$OUT.postalt.json"
+py stats "$NAMES" "$SEL_IN" "$W"/post.*.stats > "$OUT.postalt.json"
 ADDED=$(python3 -I -c "import json,sys; print(json.load(open(sys.argv[1]))['added_records'])" "$OUT.postalt.json")
 echo "$ADDED" > "$OUT.postalt_added.txt"
 python3 -I - "$OUT.postalt.json" "$OUT" > "$OUT.postalt_mqc.tsv" <<'PY'

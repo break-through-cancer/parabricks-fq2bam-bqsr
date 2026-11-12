@@ -50,20 +50,13 @@ def order():
 
 
 def stats(selected_names, selected_in, paths):
-    out = {"selected_names": selected_names, "selected_records": selected_in, "output_records": 0,
-           "with_om_tag": 0, "mapq_decreased": 0, "mapq_increased": 0, "mapq0_before": 0, "mapq0_after": 0}
+    """Sums the per-partition counters that postalt_apply writes: output, om-tagged, decreased, increased, MAPQ0 before, MAPQ0 after."""
+    keys = ["output_records", "with_om_tag", "mapq_decreased", "mapq_increased", "mapq0_before", "mapq0_after"]
+    totals = [0] * len(keys)
     for path in paths:
-        for line in open(path):
-            t = line.rstrip("\n").split("\t")
-            out["output_records"] += 1
-            om = next((int(x[5:]) for x in t[11:] if x.startswith("om:i:")), None)
-            if om is not None:
-                mq = int(t[4])
-                out["with_om_tag"] += 1
-                out["mapq_decreased"] += mq < om
-                out["mapq_increased"] += mq > om
-                out["mapq0_before"] += om == 0
-                out["mapq0_after"] += mq == 0
+        for i, v in enumerate(open(path).read().split()):
+            totals[i] += int(v)
+    out = {"selected_names": selected_names, "selected_records": selected_in, **dict(zip(keys, totals))}
     out["added_records"] = out["output_records"] - selected_in
     json.dump(out, sys.stdout, indent=2)
     print()
