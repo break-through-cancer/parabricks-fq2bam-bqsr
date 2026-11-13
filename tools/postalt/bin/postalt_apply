@@ -52,6 +52,8 @@ samtools view -H "$IN" | awk -F'\t' -v OFS='\t' -v T="$T" '
 ls "$W"/slice.*.bed > "$W/slices.txt"
 # Reads with no reference position follow the last contig in a coordinate-sorted file.
 echo '*' > "$W/slice.unplaced"
+awk -F'\t' -v OFS='\t' 'FNR == 1 { f = FILENAME; sub(/.*slice\./, "", f); sub(/\.bed$/, "", f) } { print $1, f }' "$W"/slice.*.bed > "$W/contig_slice.map"
+{ sed -E 's#.*/slice\.([0-9]+)\.bed#\1#' "$W/slices.txt"; echo zzzz; } > "$W/slice_ids.txt"
 
 run_select() {
   i=$(basename "$1" .bed); i=${i#slice.}
@@ -111,16 +113,19 @@ log "running postalt_rs"
 run_part() {
   { cat "$W/part.header.sam"; py order < "$W/part.$1.sam"; } \
     | "$POSTALT" -j 1 "$ALT" 2> "$W/post.$1.err" | grep -v '^@' \
-    | awk -F'\t' -v OFS='\t' -v S="$W/post.$1.stats" '
+    | awk -F'\t' -v OFS='\t' -v S="$W/post.$1.stats" -v M="$W/contig_slice.map" -v P="$W/post.$1" '
+        BEGIN { while ((getline line < M) > 0) { split(line, kv, "\t"); m[kv[1]] = kv[2] } }
         { if (int($2 / 2048) % 2 == 1 && int($2 / 1024) % 2 == 1) $2 -= 1024
+          sl = ($3 == "*") ? "zzzz" : m[$3]
+          if (sl == "") { print "postalt_apply: record on a contig outside the header: " $3 > "/dev/stderr"; exit 1 }
           n++
           for (i = 12; i <= NF; i++) if (substr($i, 1, 5) == "om:i:") {
             om = substr($i, 6) + 0; mq = $5 + 0; w++
             if (mq < om) d++; if (mq > om) u++; if (om == 0) b++; if (mq == 0) a++
             break
           }
-          print }
-        END { print n + 0, w + 0, d + 0, u + 0, b + 0, a + 0 > S }' > "$W/post.$1.body.sam"
+          print > (P "." sl ".sam") }
+        END { print n + 0, w + 0, d + 0, u + 0, b + 0, a + 0 > S }'
   rm -f "$W/part.$1.sam"
 }
 export -f run_part py; export W TOOLS POSTALT ALT
@@ -154,16 +159,25 @@ while IFS= read -r id; do
 done < "$W/pg_used.txt"
 cp "$HDR_IN" "$HDR_OUT"
 printf '@CO\tID:postalt\tpostalt_rs (bwa-postalt.js r985); selection=XA/rname in _alt,HLA-,_decoy; alt=%s\n' "$(md5sum "$ALT" 2>/dev/null | cut -d' ' -f1 || md5 -q "$ALT")" >> "$HDR_OUT"
-{ cat "$W/part.header.sam"; cat "$W"/post.*.body.sam; } \
-  | samtools sort --no-PG -@ "$T" -m "${SORT_M}M" -T "$W/sort" -O bam,level=1 -o "$W/post.sorted.bam" -
-rm -f "$W"/post.*.body.sam
-samtools reheader "$HDR_IN" "$W/post.sorted.bam" > "$W/post.rh.bam"
-samtools cat --no-PG -h "$HDR_IN" -o "$W/rest.rh.bam" "$W"/rest.*.bam
-rm -f "$W"/rest.[0-9]*.bam "$W/rest.zzzz.bam"
+run_sort() {
+  { cat "$HDR_IN"; cat "$W"/post.*."$1".sam 2> /dev/null || true; } \
+    | samtools sort --no-PG -@ 1 -m "${SORT_M}M" -T "$W/sort.$1" -O bam,level=1 -o "$W/post.$1.bam" -
+  rm -f "$W"/post.*."$1".sam
+}
+# Each slice is merged on its own and the slices are joined in header order, so the sort and the merge run in parallel.
+run_merge() {
+  samtools merge --no-PG -@ 1 -f -c -p -h "$HDR_OUT" --reference "$REF" -O "$OFMT" "$W/out.$1.$FMT" \
+    <(samtools reheader "$HDR_IN" "$W/rest.$1.bam") "$W/post.$1.bam"
+  rm -f "$W/rest.$1.bam" "$W/post.$1.bam"
+}
+export -f run_sort run_merge; export HDR_IN HDR_OUT SORT_M OFMT FMT REF
+xargs -P "$T" -I{} bash -c 'run_sort {}' < "$W/slice_ids.txt"
 
 log "merging"
-samtools merge --no-PG -@ "$T" -f -c -p -h "$HDR_OUT" --reference "$REF" -O "$OFMT" --write-index \
-  "$OUT.$FMT##idx##$OUT.$FMT.$IDX" "$W/rest.rh.bam" "$W/post.rh.bam"
+xargs -P "$T" -I{} bash -c 'run_merge {}' < "$W/slice_ids.txt"
+samtools cat --no-PG -o "$OUT.$FMT" "$W"/out.[0-9]*."$FMT" "$W/out.zzzz.$FMT"
+rm -f "$W"/out.*."$FMT"
+samtools index -@ "$T" "$OUT.$FMT" "$OUT.$FMT.$IDX"
 OUT_TOTAL=$(samtools idxstats "$OUT.$FMT" | awk -F'\t' '{ n += $3 + $4 } END { print n + 0 }')
 [ "$OUT_TOTAL" = "$(( IN_TOTAL + ADDED ))" ] || fail "output has $OUT_TOTAL records but input $IN_TOTAL plus $ADDED added is $(( IN_TOTAL + ADDED ))"
 log "done: $ADDED records added"
