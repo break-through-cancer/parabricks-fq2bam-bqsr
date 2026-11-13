@@ -20,9 +20,13 @@ selected name go through the script, everything else passes through untouched. T
 `.alt` file lists a contig outside those three name classes.
 
 The passes over the input (selecting names, then splitting records) run as parallel jobs over runs of whole
-contigs taken in header order, because `samtools view -e` evaluates the filter on one thread. The input
-needs an index beside it; without one, `postalt_apply` builds one in its work directory. The unselected
+contigs taken in header order, because `samtools view -e` evaluates the filter on one thread. `postalt_apply`
+always builds its own index in its work directory and ignores any index beside the input. The unselected
 slices are joined with `samtools cat`, so the merge sees the same record order as an unsliced pass.
+
+Record counts are checked three times, and any mismatch stops the run with an `ERROR:` line: each slice must
+return as many records as the index lists for its contigs, the unplaced slice must match the index, and the
+output must hold the input records plus the records postalt added.
 
 Duplicate flags: Parabricks `markdup` leaves supplementary records unflagged (checked on whole-genome runs), as
 Sarek's default coordinate-sorted GATK MarkDuplicates does, so the supplementary records postalt generates are

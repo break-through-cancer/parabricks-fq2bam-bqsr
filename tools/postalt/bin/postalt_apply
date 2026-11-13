@@ -32,16 +32,12 @@ py check-alt "$ALT" "${REF}.fai"
 
 SELECT='(rname =~ "_alt$|^HLA-|_decoy$") || ([XA] =~ "_alt,|_decoy,|(^|;)HLA-")'
 # samtools evaluates -e on one thread, so the passes over the input run as parallel jobs, each on a run of whole contigs.
-case $IN in
-  *.cram) [ -e "$IN.crai" ] && IDX_IN=$IN || IDX_IN=;;
-  *) if [ -e "$IN.bai" ] || [ -e "${IN%.bam}.bai" ]; then IDX_IN=$IN; else IDX_IN=; fi;;
-esac
-SRC=$IN
-if [ -z "$IDX_IN" ]; then
-  log "indexing input"
-  samtools index -@ "$T" "$IN" "$W/input.idx"
-  SRC="$IN##idx##$W/input.idx"
-fi
+# The index is built here, not taken from the caller: the one Parabricks writes can miss unmapped reads placed by their mate.
+log "indexing input"
+samtools index -@ "$T" "$IN" "$W/input.idx"
+SRC="$IN##idx##$W/input.idx"
+samtools idxstats "$SRC" > "$W/idxstats.in"
+IN_TOTAL=$(awk -F'\t' '{ n += $3 + $4 } END { print n + 0 }' "$W/idxstats.in")
 
 samtools view -H "$IN" | awk -F'\t' -v OFS='\t' -v T="$T" '
   $1 == "@SQ" { for (i = 2; i <= NF; i++) { if ($i ~ /^SN:/) n = substr($i, 4); if ($i ~ /^LN:/) l = substr($i, 4) } name[++c] = n; len[c] = l; total += l }
@@ -68,10 +64,12 @@ run_split() {
   i=$(basename "$1" .bed); i=${i#slice.}
   samtools view --no-PG -@ 1 -T "$REF" -M -L "$1" -N "$W/names.txt" -U "$W/rest.$i.bam" --output-fmt bam,level=1 -o "$W/sel.$i.bam" "$SRC"
   samtools view -c "$W/sel.$i.bam" > "$W/count.$i"
+  samtools view -c "$W/rest.$i.bam" > "$W/rcount.$i"
 }
 run_split_unplaced() {
   samtools view --no-PG -@ 1 -T "$REF" -N "$W/names.txt" -U "$W/rest.zzzz.bam" --output-fmt bam,level=1 -o "$W/sel.zzzz.bam" "$SRC" '*'
   samtools view -c "$W/sel.zzzz.bam" > "$W/count.zzzz"
+  samtools view -c "$W/rest.zzzz.bam" > "$W/rcount.zzzz"
 }
 export -f run_select run_select_unplaced run_split run_split_unplaced
 export W REF SRC SELECT
@@ -91,6 +89,16 @@ PJ2=$(( MEM * 6 / 10 / (NAME_GB > 0 ? NAME_GB : 1) )); [ "$PJ2" -le "$T" ] || PJ
 log "splitting selected and unselected records"
 xargs -P "$PJ2" -I{} bash -c 'run_split {}' < "$W/slices.txt"
 run_split_unplaced
+fail() { log "ERROR: $*"; exit 1; }
+while read -r bed; do
+  i=$(basename "$bed" .bed); i=${i#slice.}
+  want=$(awk -F'\t' 'NR == FNR { n[$1] = $3 + $4; next } { e += n[$1] } END { print e + 0 }' "$W/idxstats.in" "$bed")
+  got=$(( $(cat "$W/count.$i") + $(cat "$W/rcount.$i") ))
+  [ "$got" = "$want" ] || fail "slice $i returned $got records but the index lists $want (first contig $(head -n 1 "$bed" | cut -f1))"
+done < "$W/slices.txt"
+want=$(awk -F'\t' '$1 == "*" { print $3 + $4 }' "$W/idxstats.in"); want=${want:-0}
+got=$(( $(cat "$W/count.zzzz") + $(cat "$W/rcount.zzzz") ))
+[ "$got" = "$want" ] || fail "the unplaced slice returned $got records but the index lists $want"
 SEL_IN=$(cat "$W"/count.* | awk '{ n += $1 } END { print n }')
 K=$(( (SEL_IN + 999999) / 1000000 )); [ "$K" -ge $(( T * 2 )) ] || K=$(( T * 2 ))
 PJ=$T; [ "$PJ" -le 8 ] || PJ=8
@@ -156,4 +164,6 @@ rm -f "$W"/rest.[0-9]*.bam "$W/rest.zzzz.bam"
 log "merging"
 samtools merge --no-PG -@ "$T" -f -c -p -h "$HDR_OUT" --reference "$REF" -O "$OFMT" --write-index \
   "$OUT.$FMT##idx##$OUT.$FMT.$IDX" "$W/rest.rh.bam" "$W/post.rh.bam"
+OUT_TOTAL=$(samtools idxstats "$OUT.$FMT" | awk -F'\t' '{ n += $3 + $4 } END { print n + 0 }')
+[ "$OUT_TOTAL" = "$(( IN_TOTAL + ADDED ))" ] || fail "output has $OUT_TOTAL records but input $IN_TOTAL plus $ADDED added is $(( IN_TOTAL + ADDED ))"
 log "done: $ADDED records added"
