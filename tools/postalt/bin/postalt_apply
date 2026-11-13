@@ -102,7 +102,7 @@ want=$(awk -F'\t' '$1 == "*" { print $3 + $4 }' "$W/idxstats.in"); want=${want:-
 got=$(( $(cat "$W/count.zzzz") + $(cat "$W/rcount.zzzz") ))
 [ "$got" = "$want" ] || fail "the unplaced slice returned $got records but the index lists $want"
 SEL_IN=$(cat "$W"/count.* | awk '{ n += $1 } END { print n }')
-K=$(( (SEL_IN + 999999) / 1000000 )); [ "$K" -ge $(( T * 2 )) ] || K=$(( T * 2 ))
+K=$(( (SEL_IN + 999999) / 1000000 )); [ "$K" -ge 32 ] || K=32
 PJ=$T; [ "$PJ" -le 8 ] || PJ=8
 
 log "partitioning $SEL_IN records into $K groups"

@@ -52,7 +52,9 @@ def order():
 
 
 def plan_shards(work, threads):
-    """Splits each slice's postalt files into contiguous shards of similar size and prints "slice shard" pairs, largest first."""
+    """Splits each slice's postalt files into contiguous shards of similar size and prints "slice shard" pairs, largest first.
+
+    Files stay in the order a shell glob gives (partition 1, 10, 100, ...), so the sorted result does not depend on the shard sizes."""
     pat = re.compile(r"post\.(\d+)\.(\d{4}|zzzz)\.sam$")
     files = {sl.strip(): [] for sl in open(os.path.join(work, "slice_ids.txt")) if sl.strip()}
     for name in os.listdir(work):
@@ -64,7 +66,7 @@ def plan_shards(work, threads):
     target = max(total / (2 * threads), 1)
     jobs = []
     for sl, items in files.items():
-        items.sort()
+        items.sort(key=lambda item: str(item[0]))
         weight = sum(size for _, size, _ in items)
         shards = min(max(1, math.ceil(weight / target)), max(len(items), 1))
         groups = [[] for _ in range(shards)]
