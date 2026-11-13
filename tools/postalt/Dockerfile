@@ -42,7 +42,7 @@ ARG POSTALT_RS_COMMIT=b48e8b374cd4fe632f8de8932d1f71c531532d6b
 LABEL org.opencontainers.image.source="https://github.com/break-through-cancer/parabricks-fq2bam-bqsr" \
       org.opencontainers.image.description="postalt_apply: alt-aware postalt_rs (a bwa-postalt.js r985 port, GPL-3.0) on the reads it can change (samtools 1.22.1)" \
       org.opencontainers.image.licenses="GPL-3.0 AND MIT" \
-      org.opencontainers.image.version="0.2.4" \
+      org.opencontainers.image.version="0.2.5" \
       io.github.break-through-cancer.postalt_rs.source="https://github.com/bsbludwig/postalt_rs/tree/${POSTALT_RS_COMMIT}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
