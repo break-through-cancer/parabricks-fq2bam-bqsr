@@ -160,21 +160,24 @@ done < "$W/pg_used.txt"
 cp "$HDR_IN" "$HDR_OUT"
 printf '@CO\tID:postalt\tpostalt_rs (bwa-postalt.js r985); selection=XA/rname in _alt,HLA-,_decoy; alt=%s\n' "$(md5sum "$ALT" 2>/dev/null | cut -d' ' -f1 || md5 -q "$ALT")" >> "$HDR_OUT"
 run_sort() {
-  { cat "$HDR_IN"; cat "$W"/post.*."$1".sam 2> /dev/null || true; } \
-    | samtools sort --no-PG -@ 1 -m "${SORT_M}M" -T "$W/sort.$1" -O bam,level=1 -o "$W/post.$1.bam" -
-  rm -f "$W"/post.*."$1".sam
+  { cat "$HDR_IN"; xargs -a "$W/shard.$1.$2.list" cat; } \
+    | samtools sort --no-PG -@ 1 -m "${SORT_M}M" -T "$W/sort.$1.$2" -O bam,level=1 -o "$W/post.$1.$2.bam" -
+  xargs -a "$W/shard.$1.$2.list" rm -f
 }
 # Each slice is merged on its own and the slices are joined in header order, so the sort and the merge run in parallel.
+# The postalt records of one slice are sorted in contiguous shards, so a slice with many of them does not set the pace.
 run_merge() {
-  samtools merge --no-PG -@ 1 -f -c -p -h "$HDR_OUT" --reference "$REF" -O "$OFMT" "$W/out.$1.$FMT" \
-    <(samtools reheader "$HDR_IN" "$W/rest.$1.bam") "$W/post.$1.bam"
-  rm -f "$W/rest.$1.bam" "$W/post.$1.bam"
+  samtools merge --no-PG -@ 2 -f -c -p -h "$HDR_OUT" --reference "$REF" -O "$OFMT" "$W/out.$1.$FMT" \
+    <(samtools reheader "$HDR_IN" "$W/rest.$1.bam") "$W"/post."$1".[0-9][0-9][0-9].bam
+  rm -f "$W/rest.$1.bam" "$W"/post."$1".[0-9][0-9][0-9].bam
 }
 export -f run_sort run_merge; export HDR_IN HDR_OUT SORT_M OFMT FMT REF
-xargs -P "$T" -I{} bash -c 'run_sort {}' < "$W/slice_ids.txt"
+py plan-shards "$W" "$T" | xargs -P "$T" -n 2 bash -c 'run_sort "$@"' _
 
 log "merging"
-xargs -P "$T" -I{} bash -c 'run_merge {}' < "$W/slice_ids.txt"
+while read -r id; do
+  echo "$(stat -c %s "$W/rest.$id.bam" "$W"/post."$id".[0-9][0-9][0-9].bam | awk '{ n += $1 } END { print n }') $id"
+done < "$W/slice_ids.txt" | sort -rn | cut -d' ' -f2 | xargs -P "$T" -I{} bash -c 'run_merge {}'
 samtools cat --no-PG -o "$OUT.$FMT" "$W"/out.[0-9]*."$FMT" "$W/out.zzzz.$FMT"
 rm -f "$W"/out.*."$FMT"
 samtools index -@ "$T" "$OUT.$FMT" "$OUT.$FMT.$IDX"

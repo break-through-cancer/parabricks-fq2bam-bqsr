@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Helpers for postalt_apply: ALT-file checks, name-hash partitioning, postalt ordering, and statistics."""
 import json
+import math
+import os
 import re
 import sys
 import zlib
@@ -49,6 +51,35 @@ def order():
     sys.stdout.writelines(r[4] for r in rows)
 
 
+def plan_shards(work, threads):
+    """Splits each slice's postalt files into contiguous shards of similar size and prints "slice shard" pairs, largest first."""
+    pat = re.compile(r"post\.(\d+)\.(\d{4}|zzzz)\.sam$")
+    files = {sl.strip(): [] for sl in open(os.path.join(work, "slice_ids.txt")) if sl.strip()}
+    for name in os.listdir(work):
+        m = pat.match(name)
+        if m:
+            path = os.path.join(work, name)
+            files[m[2]].append((int(m[1]), os.path.getsize(path), path))
+    total = sum(size for items in files.values() for _, size, _ in items)
+    target = max(total / (2 * threads), 1)
+    jobs = []
+    for sl, items in files.items():
+        items.sort()
+        weight = sum(size for _, size, _ in items)
+        shards = min(max(1, math.ceil(weight / target)), max(len(items), 1))
+        groups = [[] for _ in range(shards)]
+        cum = 0
+        for _, size, path in items:
+            groups[min(int(cum * shards / weight), shards - 1) if weight else 0].append(path)
+            cum += size
+        for g, paths in enumerate(groups):
+            with open(os.path.join(work, f"shard.{sl}.{g:03d}.list"), "w") as out:
+                out.writelines(f"{path}\n" for path in paths)
+            jobs.append((sum(os.path.getsize(path) for path in paths), sl, f"{g:03d}"))
+    for _, sl, g in sorted(jobs, key=lambda j: -j[0]):
+        print(sl, g)
+
+
 def stats(selected_names, selected_in, paths):
     """Sums the per-partition counters that postalt_apply writes: output, om-tagged, decreased, increased, MAPQ0 before, MAPQ0 after."""
     keys = ["output_records", "with_om_tag", "mapq_decreased", "mapq_increased", "mapq0_before", "mapq0_after"]
@@ -68,6 +99,8 @@ if __name__ == "__main__":
         check_alt(*args)
     elif cmd == "partition":
         partition(int(args[0]), args[1])
+    elif cmd == "plan-shards":
+        plan_shards(args[0], int(args[1]))
     elif cmd == "order":
         order()
     elif cmd == "stats":
