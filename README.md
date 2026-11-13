@@ -236,7 +236,7 @@ used about a tenth of the CPU time.
 
 On one 451-million-record sample (an 11.7 GB CRAM) this selected 5% of the records, took about
 30 minutes on 10 CPUs, and a postalt run over a random 2% of the unselected names changed
-nothing. The step requests 16 CPUs and 32 GB (more memory on retry); scratch use was about six
+nothing. The step requests 16 CPUs and 32 GB (more memory on retry, from `conf/base.config`); scratch use was about six
 times the input alignment.
 
 What changes in the alignment: reads' positions, flags, and duplicate marks stay as they are
