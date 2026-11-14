@@ -48,6 +48,30 @@ postalt_apply --in dup.bam --ref "$HERE/fixtures/ref.fa" --alt "$HERE/fixtures/r
 [ "$(samtools view -c -f 2048 -f 1024 dupout.bam)" = 0 ] || { echo "FAIL: supplementary records carry the duplicate flag" >&2; fail=1; }
 [ "$(samtools view -c -f 1024 -F 2048 dupout.bam)" = "$(samtools view -c -f 1024 -F 2048 dup.bam)" ] || { echo "FAIL: a primary lost its duplicate flag" >&2; fail=1; }
 [ "$(samtools view -c -f 2048 dupout.bam)" -gt "$(samtools view -c -f 2048 dup.bam)" ] || { echo "FAIL: no supplementary records were generated in the duplicate test" >&2; fail=1; }
+# A record lost while slicing or joining must stop the run: a samtools shim drops the last record of one step's output.
+REAL=$(command -v samtools); export REAL
+mkdir shim
+cat > shim/samtools <<'EOS'
+#!/usr/bin/env bash
+mode=
+[ "${DROP_AT:-}" = cat ] && [ "$1" = cat ] && [[ " $* " == *" -h "* ]] && mode=drop
+[ "${DROP_AT:-}" = split ] && [ "$1" = view ] && [[ " $* " == *" -U "* ]] && mode=drop
+"$REAL" "$@" || exit $?
+[ -n "$mode" ] || exit 0
+out=; prev=
+for a in "$@"; do [ "$prev" = -o ] && out=$a; prev=$a; done
+{ "$REAL" view -H "$out"; "$REAL" view "$out" | sed '$d'; } | "$REAL" view -b -o "$out.drop" - && mv "$out.drop" "$out"
+EOS
+chmod +x shim/samtools
+for at in split cat; do
+  if PATH="$PWD/shim:$PATH" DROP_AT=$at postalt_apply --in reads.bam --ref "$HERE/fixtures/ref.fa" --alt "$HERE/fixtures/ref.alt" --out "drop_$at" --fmt bam --threads 2 --mem-gb 2 2> "drop_$at.err"; then echo "FAIL: a record dropped at $at was accepted" >&2; fail=1; fi
+  grep -q 'ERROR: ' "drop_$at.err" || { echo "FAIL: no count error when a record is dropped at $at" >&2; fail=1; }
+done
+# The index shipped with the input is never trusted: a stale one beside the input must not change the result.
+cp reads.bam stale.bam; samtools view -b -o other.bam -f 2048 reads.bam; samtools index other.bam; cp other.bam.bai stale.bam.bai
+postalt_apply --in stale.bam --ref "$HERE/fixtures/ref.fa" --alt "$HERE/fixtures/ref.alt" --out stale --fmt bam --threads 2 --mem-gb 2 2> stale.err
+samtools view stale.bam | sort > got_stale.sam
+if ! diff -u "$HERE/fixtures/expected.sam" got_stale.sam; then echo "FAIL: a stale index beside the input changed the output" >&2; fail=1; fi
 # An .alt contig class the selector does not know must stop the run.
 printf 'chrT_hap1\t0\tchrT\t1\t60\t10M\t*\t0\t0\t*\t*\n' > bad.alt
 if postalt_apply --in reads.bam --ref "$HERE/fixtures/ref.fa" --alt bad.alt --out bad --threads 2 --mem-gb 2 2> bad.err; then echo "FAIL: unknown ALT class accepted" >&2; fail=1; fi

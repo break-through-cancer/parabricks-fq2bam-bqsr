@@ -1,8 +1,7 @@
 process SAMTOOLS_FINALIZE {
     tag "${meta.sample}"
     container 'community.wave.seqera.io/library/htslib_samtools@sha256:a55ddea590e567a91df592300a960aa534cfc1bd16e7623e3938ec21f4f3df15'
-    cpus 8
-    memory '8 GB'
+    label 'process_medium'
 
     input:
     tuple val(meta), path(alignment, stageAs: 'input/*')

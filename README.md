@@ -184,7 +184,7 @@ the better choice at that memory tier: same cost, faster alignment.
 | `--fq2bam_memory_gb` | unset | Override the first-attempt host memory in GB (16–768) of `fq2bam`, and of the split `fq2bam` parts and `markdup` used for samples with singleton reads; retries multiply it by the attempt number and `--memory-limit` stays at half. Unset: 44 GB per GPU, at least 64. See *Settings by sequencing depth*. |
 | `--apply_bqsr` | `true` | FASTQ entry with known sites: run `applybqsr` (and quantization) in this same run. `false` aligns only, publishing the markduplicates alignment and BQSR table as this run's output, to apply BQSR later with a separate alignment-entry run against them. No effect without known sites, or on the alignment entry (which always applies BQSR). |
 | `--postalt` | `false` | FASTQ entry: run `postalt_rs` (a port of `bwa-postalt.js`) after fq2bam on the reads it can change; see *Alt-aware postalt*. Needs a `*.alt` file in the BWA index directory. |
-| `--postalt_container` | `ghcr.io/break-through-cancer/parabricks-fq2bam-bqsr-postalt:0.2.4` | Postalt image (samtools, `postalt_rs`, which is GPL-3.0); see `tools/postalt/`, *Licensing*. |
+| `--postalt_container` | `ghcr.io/break-through-cancer/parabricks-fq2bam-bqsr-postalt:0.2.5` | Postalt image (samtools, `postalt_rs`, which is GPL-3.0); see `tools/postalt/`, *Licensing*. |
 | `--output_fmt` | `bam` | `bam` or `cram`. |
 | `--cram_version` | `3.0` | CRAM version for CRAM output. `3.0` is readable by essentially all tools; `3.1` is smaller, but older HTSlib builds and htsjdk-based tools may not read it, and mosdepth coverage QC is skipped. |
 | `--publish_markduplicates` | `false` | FASTQ entry with known sites only: also publish the pre-BQSR, duplicate-marked alignment as an indexed file in `--output_fmt`, alongside the BQSR table that's already published there. Lets a later alignment-entry run apply BQSR without repeating alignment. No effect without known sites. |
@@ -236,7 +236,7 @@ used about a tenth of the CPU time.
 
 On one 451-million-record sample (an 11.7 GB CRAM) this selected 5% of the records, took about
 30 minutes on 10 CPUs, and a postalt run over a random 2% of the unselected names changed
-nothing. The step requests 16 CPUs and 32 GB (more memory on retry); scratch use was about six
+nothing. The step requests 16 CPUs and 32 GB (more memory on retry, from `conf/base.config`); scratch use was about six
 times the input alignment.
 
 What changes in the alignment: reads' positions, flags, and duplicate marks stay as they are

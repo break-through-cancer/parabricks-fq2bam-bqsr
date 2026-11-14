@@ -1,8 +1,7 @@
 process QUANTIZE_QUALS {
     tag "${meta.sample}"
     container params.quantize_quals_container
-    cpus 8
-    memory '8 GB'
+    label 'process_medium'
 
     input:
     tuple val(meta), path(bam, stageAs: 'input/*')

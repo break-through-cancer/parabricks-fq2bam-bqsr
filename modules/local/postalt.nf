@@ -1,8 +1,7 @@
 process POSTALT {
     tag "${meta.sample}"
     container params.postalt_container
-    cpus 16
-    memory '32 GB'
+    label 'process_high'
 
     input:
     tuple val(meta), path(alignment, stageAs: 'input/*'), path(index, stageAs: 'input/*')
