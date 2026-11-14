@@ -35,6 +35,13 @@ written without the duplicate flag even when their primary is a duplicate. Prima
 Selecting by genomic position instead is not exact: the script lowers the MAPQ of reads with a
 decoy supplementary alignment and `pa < 1` far from any ALT locus.
 
+## Sorting and merging
+
+The records `postalt_rs` writes are routed to the contig slice they belong to, sorted in size-balanced shards, and
+merged with the unselected records of that slice. The slices are joined with `samtools cat` and indexed. Tied
+records keep an order that depends only on the data, so repeated runs and different thread counts give identical
+output.
+
 ## Merge details
 
 - `samtools merge -c -p` keeps read-group and program IDs. Parabricks leaves `PG:Z:MarkDuplicates`

@@ -54,7 +54,7 @@ mkdir shim
 cat > shim/samtools <<'EOS'
 #!/usr/bin/env bash
 mode=
-[ "${DROP_AT:-}" = cat ] && [ "$1" = cat ] && [[ " $* " == *" -h "* ]] && mode=drop
+[ "${DROP_AT:-}" = cat ] && [ "$1" = cat ] && [[ " $* " != *" -o - "* ]] && mode=drop
 [ "${DROP_AT:-}" = split ] && [ "$1" = view ] && [[ " $* " == *" -U "* ]] && mode=drop
 "$REAL" "$@" || exit $?
 [ -n "$mode" ] || exit 0
