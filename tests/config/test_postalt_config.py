@@ -50,7 +50,10 @@ def test_postalt_is_wired_between_alignment_and_bqsr_and_only_for_the_fastq_entr
     assert "postalt_added" in main
 
 
-def test_cirro_compute_config_retries_postalt_with_more_memory():
-    config = (ROOT / ".cirro" / "align" / "process-compute.config").read_text()
-    block = config[config.index("withName: 'POSTALT'"):]
+def test_postalt_retries_with_more_memory_through_its_resource_label():
+    assert "label 'process_high'" in (ROOT / "modules" / "local" / "postalt.nf").read_text()
+    base = (ROOT / "conf" / "base.config").read_text()
+    block = base[base.index("withLabel: process_high"):]
     assert "memory = { 32.GB * task.attempt }" in block[:block.index("}") + 1]
+    config = (ROOT / ".cirro" / "align" / "process-compute.config").read_text()
+    assert "memory" not in config[config.index("withName: 'POSTALT'"):].split("}")[0]

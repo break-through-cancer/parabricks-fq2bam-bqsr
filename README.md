@@ -158,6 +158,13 @@ Placement on g5: a g5.12xlarge has 4 GPUs, 48 vCPUs and 192 GB, and holds two de
 2-GPU jobs. A 352 GB job needs a whole g5.24xlarge regardless of GPU count, so 4 GPUs is
 the better choice at that memory tier: same cost, faster alignment.
 
+Samples with singleton reads run as split steps. The singleton `fq2bam` part always takes 1 GPU, 16 CPUs
+and 64 GB, because it ran 1 to 3 minutes and peaked at 59 to 68 GB on samples with 20 to 30x of paired
+reads. `markdup` takes 1 GPU, 16 CPUs and 112 GB on the first attempt whatever `--fq2bam_gpus` and
+`--fq2bam_memory_gb` are, so it fits a single-GPU instance: at 352 GB it filled a whole 4-GPU
+g5.24xlarge and accounted for most of the GPU cost of a run. A retry after a memory kill multiplies the 112 GB
+by the attempt number.
+
 ### Parameters
 
 | Parameter | Default | Meaning |
@@ -181,7 +188,7 @@ the better choice at that memory tier: same cost, faster alignment.
 | `--fq2bam_low_memory` | `false` | `--low-memory` for fq2bam (one BWA stream per GPU). Turn on if a smaller GPU runs out of memory. |
 | `--fq2bam_gpuwrite` | `true` | `--gpuwrite` for fq2bam. Turn off if fq2bam fails with "Index buffer is too small for the maximum possible alignments in this batch"; runtime is unchanged. |
 | `--fq2bam_intermediate_fmt` | `bam` | Format of the duplicate-marked alignment passed from fq2bam (or markdup) to applybqsr: `bam` or `cram`. Not published; final outputs follow `--output_fmt`. Not shown on the Cirro form. |
-| `--fq2bam_memory_gb` | unset | Override the first-attempt host memory in GB (16–768) of `fq2bam`, and of the split `fq2bam` parts and `markdup` used for samples with singleton reads; retries multiply it by the attempt number and `--memory-limit` stays at half. Unset: 44 GB per GPU, at least 64. See *Settings by sequencing depth*. |
+| `--fq2bam_memory_gb` | unset | Override the first-attempt host memory in GB (16–768) of `fq2bam`, and of the paired split `fq2bam` part used for samples with singleton reads; retries multiply it by the attempt number and `--memory-limit` stays at half. Unset: 44 GB per GPU, at least 64. See *Settings by sequencing depth*. |
 | `--apply_bqsr` | `true` | FASTQ entry with known sites: run `applybqsr` (and quantization) in this same run. `false` aligns only, publishing the markduplicates alignment and BQSR table as this run's output, to apply BQSR later with a separate alignment-entry run against them. No effect without known sites, or on the alignment entry (which always applies BQSR). |
 | `--postalt` | `false` | FASTQ entry: run `postalt_rs` (a port of `bwa-postalt.js`) after fq2bam on the reads it can change; see *Alt-aware postalt*. Needs a `*.alt` file in the BWA index directory. |
 | `--postalt_container` | `ghcr.io/break-through-cancer/parabricks-fq2bam-bqsr-postalt:0.2.6` | Postalt image (samtools, `postalt_rs`, which is GPL-3.0); see `tools/postalt/`, *Licensing*. |

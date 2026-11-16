@@ -30,12 +30,22 @@ def test_cirro_runs_every_parabricks_process_on_demand_and_retries_memory_kills(
             assert "2147483647" in block, (proc, name)
 
 
-def test_fq2bam_memory_override_reaches_every_fq2bam_stage():
-    # Samples with singleton reads split into FQ2BAM_PART + MARKDUP; duplicate marking is the memory peak.
-    for name in ("parabricks_fq2bam.nf", "parabricks_fq2bam_part.nf", "parabricks_markdup.nf"):
+def test_fq2bam_memory_override_reaches_the_fq2bam_stages_but_not_markdup():
+    # markdup takes one GPU; at the override's 352 GB it filled a whole 4-GPU instance by itself.
+    for name in ("parabricks_fq2bam.nf", "parabricks_fq2bam_part.nf"):
         text = (ROOT / "modules" / "local" / name).read_text()
         memory = [l for l in text.splitlines() if l.strip().startswith("memory")][0]
         assert "params.fq2bam_memory_gb" in memory, f"{name}: {memory.strip()}"
+    text = (ROOT / "modules" / "local" / "parabricks_markdup.nf").read_text()
+    memory = [l for l in text.splitlines() if l.strip().startswith("memory")][0]
+    assert "fq2bam_memory_gb" not in memory and "fq2bam_gpus" not in memory, memory.strip()
+
+
+def test_singleton_part_requests_one_gpu():
+    # The singleton part ran 1 to 3 minutes and peaked at 59 to 68 GB while holding 4 GPUs and 352 GB.
+    assert "meta.part == 'singleton' ? 1 : params.fq2bam_gpus" in (ROOT / "conf" / "modules.config").read_text()
+    text = (ROOT / "modules" / "local" / "parabricks_fq2bam_part.nf").read_text()
+    assert text.count("fq2bamPartResources(meta,") == 2
 
 
 def test_cirro_retries_qc_steps_killed_while_staging_with_more_memory():
