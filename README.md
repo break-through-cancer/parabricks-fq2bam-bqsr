@@ -152,11 +152,13 @@ instead of paying for one that doesn't.
 | Low-pass (≤5x) | 1 | off | unset (64 GB) |
 | About 20–30x | 2 (default) | off | unset (88 GB) |
 | About 60x | 2 | off | 176 (estimate) |
-| About 100x and deeper | 4 | off | 352 |
+| About 100x and deeper | 4 | off | unset (176) |
 
-Placement on g5: a g5.12xlarge has 4 GPUs, 48 vCPUs and 192 GB, and holds two default
-2-GPU jobs. A 352 GB job needs a whole g5.24xlarge regardless of GPU count, so 4 GPUs is
-the better choice at that memory tier: same cost, faster alignment.
+Placement on g5: a g5.12xlarge has 4 GPUs, 48 vCPUs and 192 GB. At 2 GPUs, `fq2bam` peaked at 103–135 GB
+on samples from 1.8 to 5.4 billion reads, so 176 GB covers the deepest sample measured and a larger override buys
+nothing. The 4-GPU default is also 176 GB, so deep samples at 4 GPUs need no memory override. At 2 GPUs,
+`fq2bam` took about one hour per billion reads. The speed at 4 GPUs has not been measured on a sample that does not
+split.
 
 Samples with singleton reads run as split steps. The singleton `fq2bam` part always takes 1 GPU, 16 CPUs
 and 64 GB, because it ran 1 to 3 minutes and peaked at 59 to 68 GB on samples with 20 to 30x of paired
