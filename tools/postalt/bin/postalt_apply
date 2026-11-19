@@ -37,7 +37,7 @@ log "indexing input"
 samtools index -@ "$T" "$IN" "$W/input.idx"
 SRC="$IN##idx##$W/input.idx"
 samtools idxstats "$SRC" > "$W/idxstats.in"
-IN_TOTAL=$(awk -F'\t' '{ n += $3 + $4 } END { print n + 0 }' "$W/idxstats.in")
+IN_TOTAL=$(awk -F'\t' '{ n += $3 + $4 } END { printf "%.0f\n", n }' "$W/idxstats.in")
 
 samtools view -H "$IN" | awk -F'\t' -v OFS='\t' -v T="$T" '
   $1 == "@SQ" { for (i = 2; i <= NF; i++) { if ($i ~ /^SN:/) n = substr($i, 4); if ($i ~ /^LN:/) l = substr($i, 4) } name[++c] = n; len[c] = l; total += l }
@@ -125,7 +125,7 @@ run_part() {
             break
           }
           print > (P "." sl ".sam") }
-        END { print n + 0, w + 0, d + 0, u + 0, b + 0, a + 0 > S }'
+        END { printf "%.0f %.0f %.0f %.0f %.0f %.0f\n", n, w, d, u, b, a > S }'
   rm -f "$W/part.$1.sam"
 }
 export -f run_part py; export W TOOLS POSTALT ALT
@@ -181,6 +181,6 @@ done < "$W/slice_ids.txt" | sort -rn | cut -d' ' -f2 | xargs -P "$T" -I{} bash -
 samtools cat --no-PG -o "$OUT.$FMT" "$W"/out.[0-9]*."$FMT" "$W/out.zzzz.$FMT"
 rm -f "$W"/out.*."$FMT"
 samtools index -@ "$T" "$OUT.$FMT" "$OUT.$FMT.$IDX"
-OUT_TOTAL=$(samtools idxstats "$OUT.$FMT" | awk -F'\t' '{ n += $3 + $4 } END { print n + 0 }')
+OUT_TOTAL=$(samtools idxstats "$OUT.$FMT" | awk -F'\t' '{ n += $3 + $4 } END { printf "%.0f\n", n }')
 [ "$OUT_TOTAL" = "$(( IN_TOTAL + ADDED ))" ] || fail "output has $OUT_TOTAL records but input $IN_TOTAL plus $ADDED added is $(( IN_TOTAL + ADDED ))"
 log "done: $ADDED records added"
