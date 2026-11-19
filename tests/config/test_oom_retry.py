@@ -26,8 +26,16 @@ def test_cirro_runs_every_parabricks_process_on_demand_and_retries_memory_kills(
     for proc, names in (("align", FASTQ_GPU), ("applybqsr_quantize", ("PARABRICKS_APPLYBQSR",))):
         for name in names:
             block = gpu_block(proc, name)
-            assert "PW_ONDEMAND_JOB_QUEUE" in block, (proc, name)
+            assert "PW_GPU_ONDEMAND_JOB_QUEUE" in block, (proc, name)
             assert "2147483647" in block, (proc, name)
+
+
+def test_cirro_qc_steps_start_on_spot_and_move_to_cpu_on_demand_on_a_retry():
+    for proc in ("align", "applybqsr_quantize"):
+        for name in ("SAMTOOLS_STATS", "SAMTOOLS_FLAGSTAT", "MOSDEPTH", "QUANTIZE_QUALS"):
+            text = (ROOT / ".cirro" / proc / "process-compute.config").read_text()
+            blocks = [b for s, b in re.findall(r"withName: '([^']*)' \{(.*?)\n    \}", text, re.S) if name in s.split("|")]
+            assert any("task.attempt > 1 ? env('PW_ONDEMAND_JOB_QUEUE') : env('PW_SPOT_JOB_QUEUE')" in b for b in blocks), (proc, name)
 
 
 def test_fq2bam_memory_override_reaches_the_fq2bam_stages_but_not_markdup():
@@ -57,5 +65,6 @@ def test_cirro_retries_qc_steps_killed_while_staging_with_more_memory():
         assert "task.attempt" in memory, f"{name}: {memory.strip()}"
     for proc in ("align", "applybqsr_quantize"):
         for name in ("SAMTOOLS_STATS", "SAMTOOLS_FLAGSTAT", "MOSDEPTH"):
-            block = gpu_block(proc, name)
-            assert "+ 1 +" in block and "2147483647" in block, (proc, name)
+            text = (ROOT / ".cirro" / proc / "process-compute.config").read_text()
+            blocks = [b for s, b in re.findall(r"withName: '([^']*)' \{(.*?)\n    \}", text, re.S) if name in s.split("|")]
+            assert any("+ 1 +" in b and "2147483647" in b for b in blocks), (proc, name)
