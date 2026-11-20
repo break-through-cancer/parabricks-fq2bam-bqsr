@@ -340,7 +340,7 @@ Two process registrations come from this repository:
 
 | Directory | Entry point | Input dataset |
 | --- | --- | --- |
-| `.cirro/align/` | FASTQ | Paired or single-end FASTQ datasets |
+| `.cirro/align/` | FASTQ | FASTQ files picked into a samplesheet table on the form, from any datasets |
 | `.cirro/applybqsr_quantize/` | alignment + table, or quantize only | Apply BQSR modes: a `sarek_align` dataset (`preprocessing/parabricks/<sample>/<sample>.{bam,bam.bai,table}`), or this pipeline's own `--apply_bqsr false` output (`preprocessing/markduplicates/` + `preprocessing/recal_table/`). Quantize only: `preprocessing/recalibrated/` or `preprocessing/markduplicates/` of any alignment dataset |
 
 Each directory holds `process-form.json`, `process-input.json`, `preprocess.py`,
@@ -350,9 +350,12 @@ on-demand GPU queue (`PW_ONDEMAND_JOB_QUEUE`) with retries on resource-related e
 **FASTQ form:** genome source (iGenomes GATK.GRCh38, or a custom genome via a BWA index
 dataset plus known-sites/intervals from the references library), output format, `apply_bqsr`
 (hides quantization when off), quantization, trimming, single-end duplicate marking, optical
-pixel distance, alt-aware postalt (off by default), alignment GPUs, low-memory mode and an fq2bam memory override. A
-`fastq_singleton` column in the dataset's samplesheet adds that file to the sample as a
-single-end lane, resolved next to the sample's read 1.
+pixel distance, alt-aware postalt (off by default), alignment GPUs, low-memory mode and an fq2bam memory override.
+The form has no dataset selector. The samplesheet is a table with one row per lane (patient, sample,
+status, FASTQ R1 and R2), and rows may point into several datasets. It fills from a `samplesheet.csv`
+in a picked dataset or from the file names of one. A row with R2 left blank is a single-end lane, so a
+singleton FASTQ is its own row under the sample. Rows of one sample share a patient and a status
+(0 for normal, 1 for tumor, blank counts as 0), and a blank patient is an error.
 
 **Apply BQSR and Quantize form:** a mode (Apply BQSR and quantize, Apply BQSR only, or
 Quantize only), genome source (iGenomes GATK.GRCh38, or a custom genome via a BWA index

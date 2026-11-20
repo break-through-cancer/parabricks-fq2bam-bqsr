@@ -2,6 +2,10 @@
   "form": {
     "type": "object",
     "properties": {
+      "input": {
+        "type": "string",
+        "schema": "pipeline_samplesheet"
+      },
       "genome_selection": {
         "title": "Reference Genome",
         "type": "object",
@@ -78,10 +82,9 @@
                           "custom_intervals": {
                             "title": "Intervals (BED)",
                             "type": "string",
-                            "pathType": "references",
-                            "file": "**/genome_bed/**/regions.bed",
-                            "useS3Path": true,
-                            "description": "BED from the references library, e.g. a WES target BED or custom WGS intervals."
+                            "description": "BED from the references library, e.g. a WES target BED or custom WGS intervals.",
+                            "format": "file-path",
+                            "pattern": "regions\\.bed$"
                           }
                         },
                         "required": [
@@ -102,36 +105,33 @@
                   "genome_index": {
                     "title": "BWA Genome Index",
                     "type": "string",
-                    "pathType": "dataset",
                     "process": [
                       "process-cirro-genome-index-bwa-1-0",
                       "genome_bwa_index"
                     ],
-                    "description": "A pre-built BWA (not BWA-MEM2) genome index dataset containing genome.fasta and genome.fasta.fai."
+                    "description": "A pre-built BWA (not BWA-MEM2) genome index dataset containing genome.fasta and genome.fasta.fai.",
+                    "format": "directory-path"
                   },
                   "dbsnp": {
                     "title": "Known Sites (VCF)",
                     "type": "string",
-                    "pathType": "references",
-                    "file": "**/germline_resource/**/germline_resource.vcf.gz",
-                    "useS3Path": true,
-                    "description": "Optional. Without any known sites, BQSR is skipped and outputs are published as .md files."
+                    "description": "Optional. Without any known sites, BQSR is skipped and outputs are published as .md files.",
+                    "format": "file-path",
+                    "pattern": "germline_resource\\.vcf\\.gz$"
                   },
                   "known_indels": {
                     "title": "Known Indels (VCF)",
                     "type": "string",
-                    "pathType": "references",
-                    "file": "**/germline_resource/**/germline_resource.vcf.gz",
-                    "useS3Path": true,
-                    "description": "Optional second known-sites VCF."
+                    "description": "Optional second known-sites VCF.",
+                    "format": "file-path",
+                    "pattern": "germline_resource\\.vcf\\.gz$"
                   },
                   "custom_intervals": {
                     "title": "Intervals (BED)",
                     "type": "string",
-                    "pathType": "references",
-                    "file": "**/genome_bed/**/regions.bed",
-                    "useS3Path": true,
-                    "description": "Optional. Restricts BQSR table building only."
+                    "description": "Optional. Restricts BQSR table building only.",
+                    "format": "file-path",
+                    "pattern": "regions\\.bed$"
                   }
                 },
                 "required": [
@@ -412,7 +412,68 @@
           }
         }
       }
-    }
+    },
+    "required": [
+      "input"
+    ]
   },
-  "ui": {}
+  "ui": {},
+  "structuredInputs": {
+    "pipeline_samplesheet": {
+      "fileFormat": "CSV",
+      "defaultSourceFile": "samplesheet.csv",
+      "schema": {
+        "title": "Samplesheet",
+        "description": "One row per lane: a FASTQ pair, or one FASTQ with R2 left blank for a single-end (singleton) lane. Rows of one sample are merged into one alignment and must share the patient and status.",
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "properties": {
+            "patient": {
+              "type": "string",
+              "title": "Patient",
+              "pattern": "^\\S+$",
+              "errorMessage": "Patient must be provided and cannot contain spaces"
+            },
+            "sample": {
+              "type": "string",
+              "title": "Sample",
+              "pattern": "^\\S+$",
+              "errorMessage": "Sample name must be provided and cannot contain spaces"
+            },
+            "status": {
+              "type": "integer",
+              "title": "Status",
+              "enum": [
+                0,
+                1
+              ],
+              "description": "0 for normal, 1 for tumor. Blank counts as 0."
+            },
+            "fastq_1": {
+              "type": "string",
+              "format": "file-path",
+              "title": "FASTQ (R1)",
+              "pattern": "^(?![\\S\\s]*_I[12]_001\\.f(ast)?q(\\.gz)?$)([\\S\\s]*\\/)?[^\\s\\/]+\\.f(ast)?q(\\.gz)?$",
+              "errorMessage": "Must be a read FASTQ (.fq, .fastq, .fq.gz or .fastq.gz) with no spaces in its name, not an I1/I2 index read"
+            },
+            "fastq_2": {
+              "type": "string",
+              "format": "file-path",
+              "title": "FASTQ (R2)",
+              "description": "Leave blank for a single-end (singleton) lane",
+              "pattern": "^(?![\\S\\s]*_I[12]_001\\.f(ast)?q(\\.gz)?$)([\\S\\s]*\\/)?[^\\s\\/]+\\.f(ast)?q(\\.gz)?$",
+              "errorMessage": "Must be a read FASTQ (.fq, .fastq, .fq.gz or .fastq.gz) with no spaces in its name, not an I1/I2 index read"
+            }
+          },
+          "required": [
+            "patient",
+            "sample",
+            "fastq_1"
+          ]
+        }
+      }
+    }
+  }
 }
