@@ -8,7 +8,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 def flat_config(*extra):
     out = subprocess.run(["nextflow", *extra, "config", "-flat"], cwd=ROOT, capture_output=True, text=True,
-                         env={**os.environ, "PW_ONDEMAND_JOB_QUEUE": "q"}, check=True)
+                         env={**os.environ, "PW_ONDEMAND_JOB_QUEUE": "q", "PW_GPU_ONDEMAND_JOB_QUEUE": "g", "PW_SPOT_JOB_QUEUE": "s"}, check=True)
     return out.stdout
 
 

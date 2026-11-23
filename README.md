@@ -152,11 +152,20 @@ instead of paying for one that doesn't.
 | Low-pass (≤5x) | 1 | off | unset (64 GB) |
 | About 20–30x | 2 (default) | off | unset (88 GB) |
 | About 60x | 2 | off | 176 (estimate) |
-| About 100x and deeper | 4 | off | 352 |
+| About 100x and deeper | 4 | off | unset (176) |
 
-Placement on g5: a g5.12xlarge has 4 GPUs, 48 vCPUs and 192 GB, and holds two default
-2-GPU jobs. A 352 GB job needs a whole g5.24xlarge regardless of GPU count, so 4 GPUs is
-the better choice at that memory tier: same cost, faster alignment.
+Placement on g5: a g5.12xlarge has 4 GPUs, 48 vCPUs and 192 GB. At 2 GPUs, `fq2bam` peaked at 103–135 GB
+on samples from 1.8 to 5.4 billion reads, so 176 GB covers the deepest sample measured and a larger override buys
+nothing. The 4-GPU default is also 176 GB, so deep samples at 4 GPUs need no memory override. At 2 GPUs,
+`fq2bam` took about one hour per billion reads. The speed at 4 GPUs has not been measured on a sample that does not
+split.
+
+Samples with singleton reads run as split steps. The singleton `fq2bam` part always takes 1 GPU, 16 CPUs
+and 64 GB, because it ran 1 to 3 minutes and peaked at 59 to 68 GB on samples with 20 to 30x of paired
+reads. `markdup` takes 1 GPU, 16 CPUs and 112 GB on the first attempt whatever `--fq2bam_gpus` and
+`--fq2bam_memory_gb` are, so it fits a single-GPU instance: at 352 GB it filled a whole 4-GPU
+g5.24xlarge and accounted for most of the GPU cost of a run. A retry after a memory kill multiplies the 112 GB
+by the attempt number.
 
 ### Parameters
 
@@ -181,10 +190,10 @@ the better choice at that memory tier: same cost, faster alignment.
 | `--fq2bam_low_memory` | `false` | `--low-memory` for fq2bam (one BWA stream per GPU). Turn on if a smaller GPU runs out of memory. |
 | `--fq2bam_gpuwrite` | `true` | `--gpuwrite` for fq2bam. Turn off if fq2bam fails with "Index buffer is too small for the maximum possible alignments in this batch"; runtime is unchanged. |
 | `--fq2bam_intermediate_fmt` | `bam` | Format of the duplicate-marked alignment passed from fq2bam (or markdup) to applybqsr: `bam` or `cram`. Not published; final outputs follow `--output_fmt`. Not shown on the Cirro form. |
-| `--fq2bam_memory_gb` | unset | Override the first-attempt host memory in GB (16–768) of `fq2bam`, and of the split `fq2bam` parts and `markdup` used for samples with singleton reads; retries multiply it by the attempt number and `--memory-limit` stays at half. Unset: 44 GB per GPU, at least 64. See *Settings by sequencing depth*. |
+| `--fq2bam_memory_gb` | unset | Override the first-attempt host memory in GB (16–768) of `fq2bam`, and of the paired split `fq2bam` part used for samples with singleton reads; retries multiply it by the attempt number and `--memory-limit` stays at half. Unset: 44 GB per GPU, at least 64. See *Settings by sequencing depth*. |
 | `--apply_bqsr` | `true` | FASTQ entry with known sites: run `applybqsr` (and quantization) in this same run. `false` aligns only, publishing the markduplicates alignment and BQSR table as this run's output, to apply BQSR later with a separate alignment-entry run against them. No effect without known sites, or on the alignment entry (which always applies BQSR). |
 | `--postalt` | `false` | FASTQ entry: run `postalt_rs` (a port of `bwa-postalt.js`) after fq2bam on the reads it can change; see *Alt-aware postalt*. Needs a `*.alt` file in the BWA index directory. |
-| `--postalt_container` | `ghcr.io/break-through-cancer/parabricks-fq2bam-bqsr-postalt:0.2.6` | Postalt image (samtools, `postalt_rs`, which is GPL-3.0); see `tools/postalt/`, *Licensing*. |
+| `--postalt_container` | `ghcr.io/break-through-cancer/parabricks-fq2bam-bqsr-postalt:0.2.7` | Postalt image (samtools, `postalt_rs`, which is GPL-3.0); see `tools/postalt/`, *Licensing*. |
 | `--output_fmt` | `bam` | `bam` or `cram`. |
 | `--cram_version` | `3.0` | CRAM version for CRAM output. `3.0` is readable by essentially all tools; `3.1` is smaller, but older HTSlib builds and htsjdk-based tools may not read it, and mosdepth coverage QC is skipped. |
 | `--publish_markduplicates` | `false` | FASTQ entry with known sites only: also publish the pre-BQSR, duplicate-marked alignment as an indexed file in `--output_fmt`, alongside the BQSR table that's already published there. Lets a later alignment-entry run apply BQSR without repeating alignment. No effect without known sites. |

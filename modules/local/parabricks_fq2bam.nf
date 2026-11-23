@@ -108,6 +108,14 @@ def fq2bamPerformanceArgs(Map opts, Boolean tumor) {
     a
 }
 
+def fq2bamPartResources(Map meta, Object gpus, Object memory_gb) {
+    meta.part == 'singleton' ? fq2bamResources(1, null) : fq2bamResources(gpus, memory_gb)
+}
+
+def markdupMemoryGb() {
+    112
+}
+
 def fq2bamResources(Object gpus, Object memory_gb) {
     def n = gpus.toString().toInteger()
     def override = memory_gb == null ? '' : memory_gb.toString()
