@@ -463,7 +463,7 @@
               "format": "file-path",
               "title": "FASTQ (R2)",
               "description": "Leave blank for a single-end (singleton) lane",
-              "pattern": "^(?![\\S\\s]*_I[12]_001\\.f(ast)?q(\\.gz)?$)([\\S\\s]*\\/)?[^\\s\\/]+\\.f(ast)?q(\\.gz)?$",
+              "pattern": "^$|^(?![\\S\\s]*_I[12]_001\\.f(ast)?q(\\.gz)?$)([\\S\\s]*\\/)?[^\\s\\/]+\\.f(ast)?q(\\.gz)?$",
               "errorMessage": "Must be a read FASTQ (.fq, .fastq, .fq.gz or .fastq.gz) with no spaces in its name, not an I1/I2 index read"
             }
           },

@@ -122,6 +122,19 @@ def _fields(node, key=None):
             yield from _fields(value, key)
 
 
+def test_fastq_columns_accept_reads_and_only_fastq_2_accepts_a_blank_cell():
+    import json
+    import re
+    form = json.loads(pathlib.Path(__file__).with_name("process-form.json").read_text())
+    columns = form["structuredInputs"]["pipeline_samplesheet"]["schema"]["items"]["properties"]
+    r1, r2 = (re.compile(columns[k]["pattern"]) for k in ("fastq_1", "fastq_2"))
+    for name in ("s3://b/d/S1_R1.fastq.gz", "s3://b/d/S1_2.fq", "/data/S1_R2.fq.gz"):
+        assert r1.search(name) and r2.search(name), name
+    for name in ("s3://b/d/S1_I1_001.fastq.gz", "s3://b/d/S1_I2_001.fq.gz", "s3://b/d/S 1_R1.fastq.gz", "s3://b/d/S1.bam", "s3://b/d/"):
+        assert not r1.search(name) and not r2.search(name), name
+    assert r2.search("") and not r1.search("")
+
+
 def test_form_is_in_path_mode_with_a_structured_samplesheet_and_no_legacy_pickers():
     import json
     form = json.loads(pathlib.Path(__file__).with_name("process-form.json").read_text())
