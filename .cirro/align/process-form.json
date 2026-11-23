@@ -424,7 +424,7 @@
       "defaultSourceFile": "samplesheet.csv",
       "schema": {
         "title": "Samplesheet",
-        "description": "One row per lane: a FASTQ pair, or one FASTQ with R2 left blank for a single-end (singleton) lane. Rows of one sample are merged into one alignment and must share the patient and status.",
+        "description": "One row per lane. Give a FASTQ pair (R1 and R2), unpaired reads (singleton), or both. Leave R1 and R2 blank for a lane that has only unpaired reads. Rows of one sample are merged into one alignment and must share the patient and status.",
         "type": "array",
         "minItems": 1,
         "items": {
@@ -455,22 +455,30 @@
               "type": "string",
               "format": "file-path",
               "title": "FASTQ (R1)",
-              "pattern": "^(?![\\S\\s]*_I[12]_001\\.f(ast)?q(\\.gz)?$)([\\S\\s]*\\/)?[^\\s\\/]+\\.f(ast)?q(\\.gz)?$",
+              "description": "Set together with R2, or leave both blank",
+              "pattern": "^$|^(?![\\S\\s]*_I[12]_001\\.f(ast)?q(\\.gz)?$)([\\S\\s]*\\/)?[^\\s\\/]+\\.f(ast)?q(\\.gz)?$",
               "errorMessage": "Must be a read FASTQ (.fq, .fastq, .fq.gz or .fastq.gz) with no spaces in its name, not an I1/I2 index read"
             },
             "fastq_2": {
               "type": "string",
               "format": "file-path",
               "title": "FASTQ (R2)",
-              "description": "Leave blank for a single-end (singleton) lane",
+              "description": "Set together with R1, or leave both blank",
+              "pattern": "^$|^(?![\\S\\s]*_I[12]_001\\.f(ast)?q(\\.gz)?$)([\\S\\s]*\\/)?[^\\s\\/]+\\.f(ast)?q(\\.gz)?$",
+              "errorMessage": "Must be a read FASTQ (.fq, .fastq, .fq.gz or .fastq.gz) with no spaces in its name, not an I1/I2 index read"
+            },
+            "fastq_singleton": {
+              "type": "string",
+              "format": "file-path",
+              "title": "FASTQ (singleton)",
+              "description": "Unpaired reads for this lane, such as orphans left after trimming. Optional",
               "pattern": "^$|^(?![\\S\\s]*_I[12]_001\\.f(ast)?q(\\.gz)?$)([\\S\\s]*\\/)?[^\\s\\/]+\\.f(ast)?q(\\.gz)?$",
               "errorMessage": "Must be a read FASTQ (.fq, .fastq, .fq.gz or .fastq.gz) with no spaces in its name, not an I1/I2 index read"
             }
           },
           "required": [
             "patient",
-            "sample",
-            "fastq_1"
+            "sample"
           ]
         }
       }
