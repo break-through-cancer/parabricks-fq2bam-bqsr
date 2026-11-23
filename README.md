@@ -352,9 +352,10 @@ dataset plus known-sites/intervals from the references library), output format, 
 (hides quantization when off), quantization, trimming, single-end duplicate marking, optical
 pixel distance, alt-aware postalt (off by default), alignment GPUs, low-memory mode and an fq2bam memory override.
 The form has no dataset selector. The samplesheet is a table with one row per lane (patient, sample,
-status, FASTQ R1 and R2), and rows may point into several datasets. It fills from a `samplesheet.csv`
-in a picked dataset or from the file names of one. A row with R2 left blank is a single-end lane, so a
-singleton FASTQ is its own row under the sample. Rows of one sample share a patient and a status
+status, FASTQ R1, FASTQ R2, and an optional singleton FASTQ), and rows may point into several datasets.
+It fills from a `samplesheet.csv` in a picked dataset or from the file names of one. R1 and R2 are set
+together or both blank. A singleton FASTQ goes in its own column on the lane's row, and a lane with only
+unpaired reads leaves R1 and R2 blank. Rows of one sample share a patient and a status
 (0 for normal, 1 for tumor, blank counts as 0), and a blank patient is an error.
 
 **Apply BQSR and Quantize form:** a mode (Apply BQSR and quantize, Apply BQSR only, or

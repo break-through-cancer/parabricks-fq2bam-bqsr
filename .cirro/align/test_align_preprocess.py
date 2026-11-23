@@ -16,18 +16,19 @@ LOG = logging.getLogger("test")
 
 
 def table(rows):
-    return pd.DataFrame(rows, columns=["patient", "sample", "status", "fastq_1", "fastq_2"])
+    columns = ["patient", "sample", "status", "fastq_1", "fastq_2", "fastq_singleton"]
+    return pd.DataFrame([tuple(r) + ("",) * (len(columns) - len(r)) for r in rows], columns=columns)
 
 
 def test_rows_become_lanes_numbered_per_sample_with_status_default():
     sheet = build_fastq_samplesheet(table([
         ("P1", "S1", "1", "s3://b/b_R1.fq.gz", "s3://b/b_R2.fq.gz"), ("P1", "S1", "1", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz"),
-        ("P2", "S2", "", "s3://b/c.fq.gz", ""),
+        ("P2", "S2", "", "", "", "s3://b/c.fq.gz"),
     ]), LOG)
     assert list(sheet.columns) == ["patient", "sample", "status", "lane", "fastq_1", "fastq_2"]
     assert sheet[sheet["sample"] == "S1"][["lane", "fastq_1"]].values.tolist() == [["0", "s3://b/a_R1.fq.gz"], ["1", "s3://b/b_R1.fq.gz"]]
     s2 = sheet[sheet["sample"] == "S2"].iloc[0]
-    assert s2["patient"] == "P2" and s2["status"] == 0 and s2["fastq_2"] == "" and s2["lane"] == "0"
+    assert s2["patient"] == "P2" and s2["status"] == 0 and s2["fastq_1"] == "s3://b/c.fq.gz" and s2["fastq_2"] == "" and s2["lane"] == "0"
     assert sheet[sheet["sample"] == "S1"]["status"].tolist() == [1, 1]
 
 
@@ -41,12 +42,35 @@ def test_lane_numbers_do_not_depend_on_the_other_samples_in_the_run():
     assert together[together["sample"] == "S1"]["lane"].tolist() == ["0", "1"]
 
 
-def test_singleton_lane_is_a_row_without_fastq_2_and_is_numbered_after_the_paired_lanes():
+def test_a_lane_with_a_pair_and_singletons_becomes_a_paired_row_and_a_singleton_row_after_the_paired_lanes():
     sheet = build_fastq_samplesheet(table([
-        ("P1", "S1", "", "s3://b/S1__singletons.fastq.gz", ""),
-        ("P1", "S1", "", "s3://b/S1_R1.fq.gz", "s3://b/S1_R2.fq.gz"),
+        ("P1", "S1", "", "s3://b/S1_R1.fq.gz", "s3://b/S1_R2.fq.gz", "s3://b/S1__singletons.fastq.gz"),
+        ("P1", "S1", "", "s3://b/S1b_R1.fq.gz", "s3://b/S1b_R2.fq.gz"),
     ]), LOG)
-    assert sheet[["lane", "fastq_1", "fastq_2"]].values.tolist() == [["0", "s3://b/S1_R1.fq.gz", "s3://b/S1_R2.fq.gz"], ["1", "s3://b/S1__singletons.fastq.gz", ""]]
+    assert sheet[["lane", "fastq_1", "fastq_2"]].values.tolist() == [
+        ["0", "s3://b/S1_R1.fq.gz", "s3://b/S1_R2.fq.gz"], ["1", "s3://b/S1b_R1.fq.gz", "s3://b/S1b_R2.fq.gz"],
+        ["2", "s3://b/S1__singletons.fastq.gz", ""]]
+
+
+def test_a_singleton_only_row_is_a_singleton_lane():
+    sheet = build_fastq_samplesheet(table([("P1", "S1", "", "", "", "s3://b/S1_se.fastq.gz")]), LOG)
+    assert sheet[["lane", "fastq_1", "fastq_2"]].values.tolist() == [["0", "s3://b/S1_se.fastq.gz", ""]]
+
+
+def test_a_table_without_the_singleton_column_still_builds():
+    sheet = build_fastq_samplesheet(pd.DataFrame([("P1", "S1", "", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz")],
+                                                 columns=["patient", "sample", "status", "fastq_1", "fastq_2"]), LOG)
+    assert sheet[["lane", "fastq_1", "fastq_2"]].values.tolist() == [["0", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz"]]
+
+
+def test_r1_without_r2_is_an_error_that_points_to_the_singleton_column():
+    with pytest.raises(ValueError, match=r"both be set or both be blank in row\(s\) 1, 2.*fastq_singleton"):
+        build_fastq_samplesheet(table([("P1", "S1", "", "s3://b/a.fq.gz", ""), ("P1", "S1", "", "", "s3://b/b_R2.fq.gz")]), LOG)
+
+
+def test_a_row_without_any_fastq_is_an_error():
+    with pytest.raises(ValueError, match=r"no FASTQ in row\(s\) 2"):
+        build_fastq_samplesheet(table([("P1", "S1", "", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz"), ("P1", "S1", "", "", "")]), LOG)
 
 
 def test_blank_patient_is_an_error_with_no_fallback_to_the_sample():
@@ -65,6 +89,9 @@ def test_a_file_listed_twice_is_an_error_not_a_silent_duplicate():
     rows = [("P1", "S1", "", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz"), ("P1", "S1", "", "s3://b/a_R1.fq.gz", "s3://b/b_R2.fq.gz")]
     with pytest.raises(ValueError, match="a_R1.fq.gz is listed 2 times"):
         build_fastq_samplesheet(table(rows), LOG)
+    rows = [("P1", "S1", "", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz", "s3://b/a_R2.fq.gz")]
+    with pytest.raises(ValueError, match="a_R2.fq.gz is listed 2 times"):
+        build_fastq_samplesheet(table(rows), LOG)
 
 
 def test_status_other_than_0_or_1_is_an_error():
@@ -72,10 +99,9 @@ def test_status_other_than_0_or_1_is_an_error():
         build_fastq_samplesheet(table([("P1", "S1", "2", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz")]), LOG)
 
 
-def test_blank_sample_or_fastq_1_is_an_error():
-    with pytest.raises(ValueError) as error:
-        build_fastq_samplesheet(table([("P1", "", "", "s3://b/a_R1.fq.gz", ""), ("P1", "S1", "", "", "")]), LOG)
-    assert "sample is blank in row(s) 1" in str(error.value) and "fastq_1 is blank in row(s) 2" in str(error.value)
+def test_blank_sample_is_an_error():
+    with pytest.raises(ValueError, match=r"sample is blank in row\(s\) 1"):
+        build_fastq_samplesheet(table([("P1", "", "", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz")]), LOG)
 
 
 def test_empty_table_is_an_error():
@@ -122,17 +148,16 @@ def _fields(node, key=None):
             yield from _fields(value, key)
 
 
-def test_fastq_columns_accept_reads_and_only_fastq_2_accepts_a_blank_cell():
+def test_fastq_columns_accept_reads_and_a_blank_cell():
     import json
     import re
     form = json.loads(pathlib.Path(__file__).with_name("process-form.json").read_text())
     columns = form["structuredInputs"]["pipeline_samplesheet"]["schema"]["items"]["properties"]
-    r1, r2 = (re.compile(columns[k]["pattern"]) for k in ("fastq_1", "fastq_2"))
-    for name in ("s3://b/d/S1_R1.fastq.gz", "s3://b/d/S1_2.fq", "/data/S1_R2.fq.gz"):
-        assert r1.search(name) and r2.search(name), name
+    patterns = [re.compile(columns[k]["pattern"]) for k in ("fastq_1", "fastq_2", "fastq_singleton")]
+    for name in ("s3://b/d/S1_R1.fastq.gz", "s3://b/d/S1_2.fq", "/data/S1_R2.fq.gz", ""):
+        assert all(r.search(name) for r in patterns), name
     for name in ("s3://b/d/S1_I1_001.fastq.gz", "s3://b/d/S1_I2_001.fq.gz", "s3://b/d/S 1_R1.fastq.gz", "s3://b/d/S1.bam", "s3://b/d/"):
-        assert not r1.search(name) and not r2.search(name), name
-    assert r2.search("") and not r1.search("")
+        assert not any(r.search(name) for r in patterns), name
 
 
 def test_form_is_in_path_mode_with_a_structured_samplesheet_and_no_legacy_pickers():
@@ -143,9 +168,9 @@ def test_form_is_in_path_mode_with_a_structured_samplesheet_and_no_legacy_picker
     assert form["form"]["required"] == ["input"]
     assert form["form"]["properties"]["input"] == {"type": "string", "schema": "pipeline_samplesheet"}
     columns = form["structuredInputs"]["pipeline_samplesheet"]["schema"]["items"]["properties"]
-    assert list(columns) == ["patient", "sample", "status", "fastq_1", "fastq_2"]
-    assert columns["fastq_1"]["format"] == columns["fastq_2"]["format"] == "file-path"
-    assert form["structuredInputs"]["pipeline_samplesheet"]["schema"]["items"]["required"] == ["patient", "sample", "fastq_1"]
+    assert list(columns) == ["patient", "sample", "status", "fastq_1", "fastq_2", "fastq_singleton"]
+    assert columns["fastq_1"]["format"] == columns["fastq_2"]["format"] == columns["fastq_singleton"]["format"] == "file-path"
+    assert form["structuredInputs"]["pipeline_samplesheet"]["schema"]["items"]["required"] == ["patient", "sample"]
     inputs = json.loads(pathlib.Path(__file__).with_name("process-input.json").read_text())
     assert inputs["input"] == "$.structuredInputs.pipeline_samplesheet.path"
     assert not [k for k, v in inputs.items() if v.endswith(("|/data", "|/config/manifest.csv"))]
