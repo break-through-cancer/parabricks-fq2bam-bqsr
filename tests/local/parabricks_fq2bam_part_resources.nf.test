@@ -1,0 +1,27 @@
+nextflow_function {
+    name "Test fq2bamPartResources and markdupMemoryGb"
+    script "modules/local/parabricks_fq2bam.nf"
+
+    test("the paired part follows the GPU count and the memory override") {
+        function "fq2bamPartResources"
+        when { function { """
+            input[0] = [part: 'paired']
+            input[1] = 4
+            input[2] = 352
+            """ } }
+        then { assert function.result == [cpus: 48, memory_gb: 352] }
+    }
+    test("the singleton part takes one GPU's resources whatever the GPU count and override are") {
+        function "fq2bamPartResources"
+        when { function { """
+            input[0] = [part: 'singleton']
+            input[1] = 4
+            input[2] = 352
+            """ } }
+        then { assert function.result == [cpus: 16, memory_gb: 64] }
+    }
+    test("markdup memory does not depend on the GPU count or the override") {
+        function "markdupMemoryGb"
+        then { assert function.result == 112 }
+    }
+}

@@ -6,80 +6,59 @@ COLUMNS = ["patient", "sample", "status", "lane", "fastq_1", "fastq_2"]
 FORM_ONLY = ("genome_source", "genome_index", "dbsnp", "known_indels", "custom_intervals", "use_intervals", "intervals_mode")
 
 
-def singleton_files(samplesheet: pd.DataFrame, files: pd.DataFrame) -> dict:
-    """sample -> singleton FASTQ file name. Cirro ingest moves the uploaded samplesheet's
-    fastq_singleton column into a singleton column of the file list (and does not list the file, as
-    it matches no paired_dnaseq name pattern); a fastq_singleton samplesheet column is also read."""
-    named = {}
-    for table, column in ((files, "singleton"), (samplesheet, "fastq_singleton")):
-        if column not in table.columns:
-            continue
-        for _, row in table.dropna(subset=[column]).iterrows():
-            if str(row[column]).strip():
-                named[row["sample"]] = str(row[column]).strip().rsplit("/", 1)[-1]
-    return named
+def build_fastq_samplesheet(table: pd.DataFrame, log) -> pd.DataFrame:
+    """Turn the table filled in on the form into the pipeline samplesheet. A row is one lane: a FASTQ
+    pair (fastq_1 and fastq_2), unpaired reads (fastq_singleton), or both. A lane with both becomes a
+    paired row and a singleton row. Lanes are numbered per sample, paired lanes first, so a sample's
+    read-group IDs do not depend on the other samples in the run."""
+    if table.empty:
+        raise ValueError("The samplesheet has no rows")
+    missing_columns = [c for c in ("patient", "sample") if c not in table.columns]
+    if missing_columns:
+        raise ValueError("The samplesheet has no column " + ", ".join(missing_columns))
+    t = table.reindex(columns=["patient", "sample", "status", "fastq_1", "fastq_2", "fastq_singleton"]).fillna("").astype(str)
+    t = t.apply(lambda column: column.str.strip())
 
-
-def build_fastq_samplesheet(files: pd.DataFrame, samplesheet: pd.DataFrame, log) -> pd.DataFrame:
-    """One row per FASTQ pair, as sarek_align's make_manifest: Cirro's ingest already pairs mates
-    (sampleIndex), so rows are keyed by sampleIndex/sample/lane/dataset and read 1/2 become
-    fastq_1/fastq_2. Nothing is dropped: a pair with two files for the same read, or a read 1 without
-    its read 2 in a paired sample, is an error."""
-    if "readType" in files.columns:
-        files = files.loc[files["readType"].fillna("R") == "R"]
-    original_files = list(files["file"])
-    singletons = singleton_files(samplesheet, files)
-    if singletons:
-        files = files.loc[~files["file"].str.rsplit("/", n=1).str[-1].isin(set(singletons.values()))]
-    if files.empty:
-        raise ValueError("No FASTQ files found in the input dataset(s)")
-    if files["read"].isna().any():
-        raise ValueError("Read number missing for: " + ", ".join(files.loc[files["read"].isna(), "file"]))
-
-    f = files.assign(read=files["read"].astype(int), lane=files.get("lane", pd.Series(index=files.index, dtype=object)).fillna("1").astype(str))
-    key = [c for c in ("sampleIndex", "sample", "lane", "dataset") if c in f.columns]
-    paired = set(f.loc[f["read"] == 2, "sample"])
-
-    rows, problems = [], []
-    for _, group in f.groupby(key, sort=True, dropna=False):
-        sample, lane = group["sample"].iloc[0], group["lane"].iloc[0]
-        dup = group["read"].value_counts()
-        for read in dup[dup > 1].index:
-            problems.append(f"{sample}: more than one read {read} for one pair: {', '.join(group.loc[group['read'] == read, 'file'])}")
-        mates = dict(zip(group["read"], group["file"]))
-        if sample in paired and set(mates) != {1, 2}:
-            problems.append(f"{sample}: no mate found for {', '.join(mates.values())}")
-            continue
-        rows.append(dict(sample=sample, lane=lane, fastq_1=mates.get(1, ""), fastq_2=mates.get(2, "")))
-    for sample, name in sorted(singletons.items()):
-        own = [r for r in rows if r["sample"] == sample]
-        if not own:
-            problems.append(f"{sample}: fastq_singleton {name} given but the sample has no paired FASTQs")
-            continue
-        listed = [p for p in original_files if p.rsplit("/", 1)[-1] == name]
-        path = listed[0] if listed else f"{own[0]['fastq_1'].rsplit('/', 1)[0]}/{name}"
-        rows.append(dict(sample=sample, lane="singleton", fastq_1=path, fastq_2=""))
+    problems = []
+    for column in ("patient", "sample"):
+        blank = t.index[t[column] == ""] + 1
+        if len(blank):
+            problems.append(f"{column} is blank in row(s) " + ", ".join(map(str, blank)))
+    half = t.index[(t["fastq_1"] == "") != (t["fastq_2"] == "")] + 1
+    if len(half):
+        problems.append("fastq_1 and fastq_2 must both be set or both be blank in row(s) " + ", ".join(map(str, half))
+                        + " (put single-end reads in fastq_singleton)")
+    empty = t.index[(t["fastq_1"] == "") & (t["fastq_2"] == "") & (t["fastq_singleton"] == "")] + 1
+    if len(empty):
+        problems.append("no FASTQ in row(s) " + ", ".join(map(str, empty)))
+    bad_status = t.loc[~t["status"].isin(["", "0", "1"]), "status"].unique()
+    if len(bad_status):
+        problems.append("status must be 0 (normal) or 1 (tumor), got " + ", ".join(bad_status))
+    files = pd.concat([t["fastq_1"], t["fastq_2"], t["fastq_singleton"]])
+    for path, n in files[files != ""].value_counts().items():
+        if n > 1:
+            problems.append(f"{path} is listed {n} times")
+    for sample, group in t.groupby("sample", sort=True):
+        for column in ("patient", "status"):
+            values = sorted(set(group[column]) - {""}) if column == "status" else sorted(set(group[column]))
+            if len(values) > 1:
+                problems.append(f"{sample}: more than one {column} ({', '.join(values) or 'blank'})")
     if problems:
-        raise ValueError("Cannot build FASTQ pairs:\n  " + "\n  ".join(problems))
+        raise ValueError("Cannot build the samplesheet:\n  " + "\n  ".join(problems))
 
-    wide = pd.DataFrame(rows)
-    meta = samplesheet.reindex(columns=["sample", "patient", "status"]).set_index("sample")
-    missing = meta["status"].isna().sum() + len(set(wide["sample"]) - set(meta.index))
-    if missing:
-        log.warning(f"status not provided for {missing} sample(s), defaulting to 0 (normal)")
-    # No fallback to the sample id here: this feeds SM:${patient}_${sample} in the CRAM's
-    # read group (subworkflows/local/samplesheet_to_fastqs/main.nf), and a silent
-    # patient==sample fallback produces a self-doubled SM that downstream consumers
-    # (e.g. ICONICC-NF's SUBSET_PAIR_VCF) cannot anticipate.
-    wide["patient"] = wide["sample"].map(meta["patient"])
-    missing_patient = sorted(set(wide.loc[wide["patient"].isna(), "sample"]))
-    if missing_patient:
-        raise ValueError("No patient recorded in Cirro sample metadata for: " + ", ".join(missing_patient))
-    wide["status"] = wide["sample"].map(meta["status"]).fillna(0).astype(int)
-    wide = wide.sort_values(["sample", "lane", "fastq_1"]).reset_index(drop=True)
-    # Per-sample numbering keeps a sample's read-group IDs the same whichever other samples share the run.
-    wide["lane"] = wide.groupby("sample").cumcount().astype(str)
-    return wide[COLUMNS]
+    unset = int((t.groupby("sample")["status"].apply(lambda s: (s == "").all())).sum())
+    if unset:
+        log.warning(f"status not provided for {unset} sample(s), defaulting to 0 (normal)")
+    # No fallback from patient to the sample id: it feeds SM:${patient}_${sample} in the CRAM's read
+    # group (subworkflows/local/samplesheet_to_fastqs/main.nf), and a silent patient==sample fallback
+    # produces a self-doubled SM that downstream consumers (e.g. ICONICC-NF's SUBSET_PAIR_VCF) cannot anticipate.
+    status = t.groupby("sample")["status"].transform(lambda s: next((v for v in s if v != ""), "0")).astype(int)
+    t = t.assign(status=status)
+    paired = t[t["fastq_1"] != ""].assign(single=False)
+    unpaired = t[t["fastq_singleton"] != ""].assign(fastq_1=lambda d: d["fastq_singleton"], fastq_2="", single=True)
+    out = pd.concat([paired, unpaired]).sort_values(["sample", "single", "fastq_1"])
+    out["lane"] = out.groupby("sample").cumcount().astype(str)
+    return out.reset_index(drop=True)[COLUMNS]
 
 
 def apply_genome_params(params: dict) -> dict:
@@ -91,6 +70,8 @@ def apply_genome_params(params: dict) -> dict:
         if not index:
             raise ValueError("Custom genome selected but no BWA genome index dataset was provided")
         p["genome"] = "null"
+        # The folder picker stores a path that ends in a slash; joining onto it would give "//".
+        index = index.rstrip("/")
         p["bwa_index"] = index
         p["ref_fasta"] = f"{index}/genome.fasta"
         p["ref_fasta_fai"] = f"{index}/genome.fasta.fai"
@@ -116,8 +97,8 @@ if __name__ == "__main__":
     from cirro.helpers.preprocess_dataset import PreprocessDataset
 
     ds = PreprocessDataset.from_running()
-    sheet = build_fastq_samplesheet(ds.files, ds.samplesheet, ds.logger)
-    ds.logger.info(sheet.to_csv(index=False))
+    table = pd.read_csv(ds.params["input"], dtype=str, keep_default_na=False)
+    sheet = build_fastq_samplesheet(table, ds.logger)
     sheet.to_csv(ds.params["input"], index=False)
     resolved = apply_genome_params(ds.params)
     for key in FORM_ONLY:

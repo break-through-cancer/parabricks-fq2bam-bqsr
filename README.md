@@ -152,11 +152,20 @@ instead of paying for one that doesn't.
 | Low-pass (≤5x) | 1 | off | unset (64 GB) |
 | About 20–30x | 2 (default) | off | unset (88 GB) |
 | About 60x | 2 | off | 176 (estimate) |
-| About 100x and deeper | 4 | off | 352 |
+| About 100x and deeper | 4 | off | unset (176) |
 
-Placement on g5: a g5.12xlarge has 4 GPUs, 48 vCPUs and 192 GB, and holds two default
-2-GPU jobs. A 352 GB job needs a whole g5.24xlarge regardless of GPU count, so 4 GPUs is
-the better choice at that memory tier: same cost, faster alignment.
+Placement on g5: a g5.12xlarge has 4 GPUs, 48 vCPUs and 192 GB. At 2 GPUs, `fq2bam` peaked at 103–135 GB
+on samples from 1.8 to 5.4 billion reads, so 176 GB covers the deepest sample measured and a larger override buys
+nothing. The 4-GPU default is also 176 GB, so deep samples at 4 GPUs need no memory override. At 2 GPUs,
+`fq2bam` took about one hour per billion reads. The speed at 4 GPUs has not been measured on a sample that does not
+split.
+
+Samples with singleton reads run as split steps. The singleton `fq2bam` part always takes 1 GPU, 16 CPUs
+and 64 GB, because it ran 1 to 3 minutes and peaked at 59 to 68 GB on samples with 20 to 30x of paired
+reads. `markdup` takes 1 GPU, 16 CPUs and 112 GB on the first attempt whatever `--fq2bam_gpus` and
+`--fq2bam_memory_gb` are, so it fits a single-GPU instance: at 352 GB it filled a whole 4-GPU
+g5.24xlarge and accounted for most of the GPU cost of a run. A retry after a memory kill multiplies the 112 GB
+by the attempt number.
 
 ### Parameters
 
@@ -181,10 +190,10 @@ the better choice at that memory tier: same cost, faster alignment.
 | `--fq2bam_low_memory` | `false` | `--low-memory` for fq2bam (one BWA stream per GPU). Turn on if a smaller GPU runs out of memory. |
 | `--fq2bam_gpuwrite` | `true` | `--gpuwrite` for fq2bam. Turn off if fq2bam fails with "Index buffer is too small for the maximum possible alignments in this batch"; runtime is unchanged. |
 | `--fq2bam_intermediate_fmt` | `bam` | Format of the duplicate-marked alignment passed from fq2bam (or markdup) to applybqsr: `bam` or `cram`. Not published; final outputs follow `--output_fmt`. Not shown on the Cirro form. |
-| `--fq2bam_memory_gb` | unset | Override the first-attempt host memory in GB (16–768) of `fq2bam`, and of the split `fq2bam` parts and `markdup` used for samples with singleton reads; retries multiply it by the attempt number and `--memory-limit` stays at half. Unset: 44 GB per GPU, at least 64. See *Settings by sequencing depth*. |
+| `--fq2bam_memory_gb` | unset | Override the first-attempt host memory in GB (16–768) of `fq2bam`, and of the paired split `fq2bam` part used for samples with singleton reads; retries multiply it by the attempt number and `--memory-limit` stays at half. Unset: 44 GB per GPU, at least 64. See *Settings by sequencing depth*. |
 | `--apply_bqsr` | `true` | FASTQ entry with known sites: run `applybqsr` (and quantization) in this same run. `false` aligns only, publishing the markduplicates alignment and BQSR table as this run's output, to apply BQSR later with a separate alignment-entry run against them. No effect without known sites, or on the alignment entry (which always applies BQSR). |
 | `--postalt` | `false` | FASTQ entry: run `postalt_rs` (a port of `bwa-postalt.js`) after fq2bam on the reads it can change; see *Alt-aware postalt*. Needs a `*.alt` file in the BWA index directory. |
-| `--postalt_container` | `ghcr.io/break-through-cancer/parabricks-fq2bam-bqsr-postalt:0.2.6` | Postalt image (samtools, `postalt_rs`, which is GPL-3.0); see `tools/postalt/`, *Licensing*. |
+| `--postalt_container` | `ghcr.io/break-through-cancer/parabricks-fq2bam-bqsr-postalt:0.2.7` | Postalt image (samtools, `postalt_rs`, which is GPL-3.0); see `tools/postalt/`, *Licensing*. |
 | `--output_fmt` | `bam` | `bam` or `cram`. |
 | `--cram_version` | `3.0` | CRAM version for CRAM output. `3.0` is readable by essentially all tools; `3.1` is smaller, but older HTSlib builds and htsjdk-based tools may not read it, and mosdepth coverage QC is skipped. |
 | `--publish_markduplicates` | `false` | FASTQ entry with known sites only: also publish the pre-BQSR, duplicate-marked alignment as an indexed file in `--output_fmt`, alongside the BQSR table that's already published there. Lets a later alignment-entry run apply BQSR without repeating alignment. No effect without known sites. |
@@ -340,7 +349,7 @@ Two process registrations come from this repository:
 
 | Directory | Entry point | Input dataset |
 | --- | --- | --- |
-| `.cirro/align/` | FASTQ | Paired or single-end FASTQ datasets |
+| `.cirro/applybqsr_quantize/` | alignment + table, or quantize only | Apply BQSR modes: a `sarek_align` dataset (`preprocessing/parabricks/<sample>/<sample>.{bam,bam.bai,table}`), or this pipeline's own `--apply_bqsr false` output (`preprocessing/markduplicates/` + `preprocessing/recal_table/`). Quantize only: `preprocessing/recalibrated/` or `preprocessing/markduplicates/` of any alignment dataset |
 | `.cirro/applybqsr_quantize/` | alignment + table, or quantize only | A samplesheet table of alignment, index and recalibration table files, picked from datasets. Apply BQSR modes: a `sarek_align` dataset (`preprocessing/parabricks/<sample>/<sample>.{bam,bam.bai,table}`), or this pipeline's own `--apply_bqsr false` output (`preprocessing/markduplicates/` + `preprocessing/recal_table/`). Quantize only: any alignment |
 
 Each directory holds `process-form.json`, `process-input.json`, `preprocess.py`,
@@ -350,9 +359,13 @@ on-demand GPU queue (`PW_ONDEMAND_JOB_QUEUE`) with retries on resource-related e
 **FASTQ form:** genome source (iGenomes GATK.GRCh38, or a custom genome via a BWA index
 dataset plus known-sites/intervals from the references library), output format, `apply_bqsr`
 (hides quantization when off), quantization, trimming, single-end duplicate marking, optical
-pixel distance, alt-aware postalt (off by default), alignment GPUs, low-memory mode and an fq2bam memory override. A
-`fastq_singleton` column in the dataset's samplesheet adds that file to the sample as a
-single-end lane, resolved next to the sample's read 1.
+pixel distance, alt-aware postalt (off by default), alignment GPUs, low-memory mode and an fq2bam memory override.
+The form has no dataset selector. The samplesheet is a table with one row per lane (patient, sample,
+status, FASTQ R1, FASTQ R2, and an optional singleton FASTQ), and rows may point into several datasets.
+It fills from a `samplesheet.csv` in a picked dataset or from the file names of one. R1 and R2 are set
+together or both blank. A singleton FASTQ goes in its own column on the lane's row, and a lane with only
+unpaired reads leaves R1 and R2 blank. Rows of one sample share a patient and a status
+(0 for normal, 1 for tumor, blank counts as 0), and a blank patient is an error.
 
 **Apply BQSR and Quantize form:** a samplesheet table with one row per sample (sample, alignment,
 alignment index, recalibration table), each file chosen from Cirro datasets or entered as an S3 URI;

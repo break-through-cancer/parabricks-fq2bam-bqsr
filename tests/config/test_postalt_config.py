@@ -50,7 +50,15 @@ def test_postalt_is_wired_between_alignment_and_bqsr_and_only_for_the_fastq_entr
     assert "postalt_added" in main
 
 
-def test_cirro_compute_config_retries_postalt_with_more_memory():
+def test_postalt_memory_sets_the_split_parallelism_and_grows_with_each_attempt():
+    modules = (ROOT / "conf" / "modules.config").read_text()
+    block = modules[modules.index("withName: 'POSTALT'"):]
+    assert "memory = { 96.GB * task.attempt }" in block[:block.index("publishDir")]
     config = (ROOT / ".cirro" / "align" / "process-compute.config").read_text()
-    block = config[config.index("withName: 'POSTALT'"):]
-    assert "memory = { 32.GB * task.attempt }" in block[:block.index("}") + 1]
+    assert "memory" not in config[config.index("withName: 'POSTALT'"):].split("}")[0]
+
+
+def test_postalt_record_counts_never_print_in_exponent_form():
+    # mawk prints 2.7e+09 for large sums, which broke the arithmetic of the final count check.
+    script = (ROOT / "tools" / "postalt" / "bin" / "postalt_apply").read_text()
+    assert "n + 0 }" not in script and "print n + 0" not in script
