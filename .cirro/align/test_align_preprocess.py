@@ -15,102 +15,103 @@ build_fastq_samplesheet = _preprocess.build_fastq_samplesheet
 LOG = logging.getLogger("test")
 
 
-def files(rows, with_index=True):
-    cols = ["sampleIndex", "sample", "lane", "read", "file"]
-    df = pd.DataFrame(rows, columns=cols)
-    return df if with_index else df.drop(columns=["sampleIndex"])
+def table(rows):
+    columns = ["patient", "sample", "status", "fastq_1", "fastq_2", "fastq_singleton"]
+    return pd.DataFrame([tuple(r) + ("",) * (len(columns) - len(r)) for r in rows], columns=columns)
 
 
-META = pd.DataFrame([{"sample": "S1", "patient": "P1"}])
-
-
-def test_pairs_by_sample_index_with_status_default():
-    f = files([
-        (0, "S1", "1", 1, "s3://b/a_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/a_R2.fq.gz"),
-        (1, "S1", "2", 1, "s3://b/b_R1.fq.gz"), (1, "S1", "2", 2, "s3://b/b_R2.fq.gz"),
-        (2, "S2", "1", 1, "s3://b/c.fq.gz"),
-    ])
-    meta = pd.DataFrame([{"sample": "S1", "patient": "P1", "status": 1}, {"sample": "S2", "patient": "P2"}])
-    sheet = build_fastq_samplesheet(f, meta, LOG)
+def test_rows_become_lanes_numbered_per_sample_with_status_default():
+    sheet = build_fastq_samplesheet(table([
+        ("P1", "S1", "1", "s3://b/b_R1.fq.gz", "s3://b/b_R2.fq.gz"), ("P1", "S1", "1", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz"),
+        ("P2", "S2", "", "", "", "s3://b/c.fq.gz"),
+    ]), LOG)
     assert list(sheet.columns) == ["patient", "sample", "status", "lane", "fastq_1", "fastq_2"]
-    assert sheet["lane"].tolist() == ["0", "1", "0"]
+    assert sheet[sheet["sample"] == "S1"][["lane", "fastq_1"]].values.tolist() == [["0", "s3://b/a_R1.fq.gz"], ["1", "s3://b/b_R1.fq.gz"]]
     s2 = sheet[sheet["sample"] == "S2"].iloc[0]
-    assert s2["patient"] == "P2" and s2["status"] == 0 and s2["fastq_2"] == ""
+    assert s2["patient"] == "P2" and s2["status"] == 0 and s2["fastq_1"] == "s3://b/c.fq.gz" and s2["fastq_2"] == "" and s2["lane"] == "0"
     assert sheet[sheet["sample"] == "S1"]["status"].tolist() == [1, 1]
 
 
 def test_lane_numbers_do_not_depend_on_the_other_samples_in_the_run():
-    rows = {
-        "S1": [(0, "S1", "1", 1, "s3://b/a_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/a_R2.fq.gz"),
-               (1, "S1", "2", 1, "s3://b/b_R1.fq.gz"), (1, "S1", "2", 2, "s3://b/b_R2.fq.gz")],
-        "S2": [(2, "S2", "1", 1, "s3://b/c_R1.fq.gz"), (2, "S2", "1", 2, "s3://b/c_R2.fq.gz")],
-    }
-    meta = pd.DataFrame([{"sample": "S1", "patient": "P1"}, {"sample": "S2", "patient": "P2"}])
-    alone = build_fastq_samplesheet(files(rows["S2"]), meta, LOG)
-    together = build_fastq_samplesheet(files(rows["S1"] + rows["S2"]), meta, LOG)
+    s1 = [("P1", "S1", "", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz"), ("P1", "S1", "", "s3://b/b_R1.fq.gz", "s3://b/b_R2.fq.gz")]
+    s2 = [("P2", "S2", "", "s3://b/c_R1.fq.gz", "s3://b/c_R2.fq.gz")]
+    alone = build_fastq_samplesheet(table(s2), LOG)
+    together = build_fastq_samplesheet(table(s1 + s2), LOG)
     assert alone[["sample", "lane"]].values.tolist() == [["S2", "0"]]
     assert together[together["sample"] == "S2"][["sample", "lane"]].values.tolist() == [["S2", "0"]]
     assert together[together["sample"] == "S1"]["lane"].tolist() == ["0", "1"]
 
 
-def test_missing_patient_in_cirro_metadata_is_an_error():
-    f = files([(0, "S1", "1", 1, "s3://b/a_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/a_R2.fq.gz")])
-    meta = pd.DataFrame([{"sample": "S1"}])
-    with pytest.raises(ValueError, match="patient"):
-        build_fastq_samplesheet(f, meta, LOG)
+def test_a_lane_with_a_pair_and_singletons_becomes_a_paired_row_and_a_singleton_row_after_the_paired_lanes():
+    sheet = build_fastq_samplesheet(table([
+        ("P1", "S1", "", "s3://b/S1_R1.fq.gz", "s3://b/S1_R2.fq.gz", "s3://b/S1__singletons.fastq.gz"),
+        ("P1", "S1", "", "s3://b/S1b_R1.fq.gz", "s3://b/S1b_R2.fq.gz"),
+    ]), LOG)
+    assert sheet[["lane", "fastq_1", "fastq_2"]].values.tolist() == [
+        ["0", "s3://b/S1_R1.fq.gz", "s3://b/S1_R2.fq.gz"], ["1", "s3://b/S1b_R1.fq.gz", "s3://b/S1b_R2.fq.gz"],
+        ["2", "s3://b/S1__singletons.fastq.gz", ""]]
 
 
-def test_pairing_does_not_depend_on_file_names():
-    f = files([(0, "S1", "1", 1, "s3://b/x_1-merged.fastq.gz"), (0, "S1", "1", 2, "s3://b/x_2-merged.fastq.gz")])
-    assert build_fastq_samplesheet(f, META, LOG)[["fastq_1", "fastq_2"]].values.tolist() == [["s3://b/x_1-merged.fastq.gz", "s3://b/x_2-merged.fastq.gz"]]
+def test_a_singleton_only_row_is_a_singleton_lane():
+    sheet = build_fastq_samplesheet(table([("P1", "S1", "", "", "", "s3://b/S1_se.fastq.gz")]), LOG)
+    assert sheet[["lane", "fastq_1", "fastq_2"]].values.tolist() == [["0", "s3://b/S1_se.fastq.gz", ""]]
 
 
-def test_top_up_runs_in_the_same_lane_are_all_kept():
-    f = files([
-        (0, "S1", "1", 1, "s3://b/run1/S1_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/run1/S1_R2.fq.gz"),
-        (1, "S1", "1", 1, "s3://b/run2/S1_R1.fq.gz"), (1, "S1", "1", 2, "s3://b/run2/S1_R2.fq.gz"),
-    ])
-    sheet = build_fastq_samplesheet(f, META, LOG)
-    assert sorted(zip(sheet["fastq_1"], sheet["fastq_2"])) == [("s3://b/run1/S1_R1.fq.gz", "s3://b/run1/S1_R2.fq.gz"),
-                                                               ("s3://b/run2/S1_R1.fq.gz", "s3://b/run2/S1_R2.fq.gz")]
+def test_a_table_without_the_singleton_column_still_builds():
+    sheet = build_fastq_samplesheet(pd.DataFrame([("P1", "S1", "", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz")],
+                                                 columns=["patient", "sample", "status", "fastq_1", "fastq_2"]), LOG)
+    assert sheet[["lane", "fastq_1", "fastq_2"]].values.tolist() == [["0", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz"]]
 
 
-def test_laneless_chunks_are_all_kept():
-    f = files([(0, "S1", None, 1, "s3://b/p1_R1.fq.gz"), (0, "S1", None, 2, "s3://b/p1_R2.fq.gz"),
-               (1, "S1", None, 1, "s3://b/p2_R1.fq.gz"), (1, "S1", None, 2, "s3://b/p2_R2.fq.gz")])
-    assert len(build_fastq_samplesheet(f, META, LOG)) == 2
+def test_r1_without_r2_is_an_error_that_points_to_the_singleton_column():
+    with pytest.raises(ValueError, match=r"both be set or both be blank in row\(s\) 1, 2.*fastq_singleton"):
+        build_fastq_samplesheet(table([("P1", "S1", "", "s3://b/a.fq.gz", ""), ("P1", "S1", "", "", "s3://b/b_R2.fq.gz")]), LOG)
 
 
-def test_read_1_without_read_2_in_a_paired_sample_is_an_error():
-    f = files([(0, "S1", "1", 1, "s3://b/a_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/a_R2.fq.gz"), (1, "S1", "1", 1, "s3://b/b_R1.fq.gz")])
-    with pytest.raises(ValueError, match="b_R1.fq.gz"):
-        build_fastq_samplesheet(f, META, LOG)
+def test_a_row_without_any_fastq_is_an_error():
+    with pytest.raises(ValueError, match=r"no FASTQ in row\(s\) 2"):
+        build_fastq_samplesheet(table([("P1", "S1", "", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz"), ("P1", "S1", "", "", "")]), LOG)
 
 
-def test_two_files_for_the_same_read_of_one_pair_is_an_error_not_a_silent_drop():
-    f = files([(0, "S1", "1", 1, "s3://b/a_R1.fq.gz"), (0, "S1", "1", 1, "s3://b/b_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/a_R2.fq.gz")])
-    with pytest.raises(ValueError, match="more than one read 1"):
-        build_fastq_samplesheet(f, META, LOG)
+def test_blank_patient_is_an_error_with_no_fallback_to_the_sample():
+    with pytest.raises(ValueError, match="patient is blank in row"):
+        build_fastq_samplesheet(table([("", "S1", "", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz")]), LOG)
 
 
-def test_without_sample_index_one_pair_per_lane_still_works_and_extra_files_are_an_error():
-    ok = files([("x", "S1", "1", 1, "s3://b/a_R1.fq.gz"), ("x", "S1", "1", 2, "s3://b/a_R2.fq.gz")], with_index=False)
-    assert len(build_fastq_samplesheet(ok, META, LOG)) == 1
-    bad = files([("x", "S1", "1", 1, "s3://b/a_R1.fq.gz"), ("x", "S1", "1", 1, "s3://b/b_R1.fq.gz"),
-                 ("x", "S1", "1", 2, "s3://b/a_R2.fq.gz"), ("x", "S1", "1", 2, "s3://b/b_R2.fq.gz")], with_index=False)
-    with pytest.raises(ValueError, match="more than one read 1"):
-        build_fastq_samplesheet(bad, META, LOG)
+def test_one_sample_cannot_have_two_patients_or_two_statuses():
+    rows = [("P1", "S1", "0", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz"), ("P2", "S1", "1", "s3://b/b_R1.fq.gz", "s3://b/b_R2.fq.gz")]
+    with pytest.raises(ValueError) as error:
+        build_fastq_samplesheet(table(rows), LOG)
+    assert "S1: more than one patient" in str(error.value) and "S1: more than one status" in str(error.value)
 
 
-def test_index_reads_are_ignored():
-    f = files([(0, "S1", "1", 1, "s3://b/a_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/a_R2.fq.gz"), (0, "S1", "1", 1, "s3://b/a_I1.fq.gz")])
-    f["readType"] = ["R", "R", "I"]
-    assert len(build_fastq_samplesheet(f, META, LOG)) == 1
+def test_a_file_listed_twice_is_an_error_not_a_silent_duplicate():
+    rows = [("P1", "S1", "", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz"), ("P1", "S1", "", "s3://b/a_R1.fq.gz", "s3://b/b_R2.fq.gz")]
+    with pytest.raises(ValueError, match="a_R1.fq.gz is listed 2 times"):
+        build_fastq_samplesheet(table(rows), LOG)
+    rows = [("P1", "S1", "", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz", "s3://b/a_R2.fq.gz")]
+    with pytest.raises(ValueError, match="a_R2.fq.gz is listed 2 times"):
+        build_fastq_samplesheet(table(rows), LOG)
 
 
-def test_no_files_is_an_error():
-    with pytest.raises(ValueError, match="No FASTQ files"):
-        build_fastq_samplesheet(files([]), pd.DataFrame(columns=["sample"]), LOG)
+def test_status_other_than_0_or_1_is_an_error():
+    with pytest.raises(ValueError, match="status must be 0"):
+        build_fastq_samplesheet(table([("P1", "S1", "2", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz")]), LOG)
+
+
+def test_blank_sample_is_an_error():
+    with pytest.raises(ValueError, match=r"sample is blank in row\(s\) 1"):
+        build_fastq_samplesheet(table([("P1", "", "", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz")]), LOG)
+
+
+def test_empty_table_is_an_error():
+    with pytest.raises(ValueError, match="no rows"):
+        build_fastq_samplesheet(table([]), LOG)
+
+
+def test_whitespace_around_cells_is_ignored():
+    sheet = build_fastq_samplesheet(table([(" P1 ", " S1 ", " 1 ", " s3://b/a_R1.fq.gz ", " s3://b/a_R2.fq.gz ")]), LOG)
+    assert sheet.iloc[0].tolist() == ["P1", "S1", 1, "0", "s3://b/a_R1.fq.gz", "s3://b/a_R2.fq.gz"]
 
 
 def test_igenomes_with_intervals_unticked():
@@ -121,7 +122,7 @@ def test_igenomes_with_intervals_unticked():
 
 
 def test_custom_genome_resolves_dataset_files_and_known_sites():
-    p = apply_genome_params({"genome_source": "dataset", "genome_index": "s3://b/ds/data",
+    p = apply_genome_params({"genome_source": "dataset", "genome_index": "s3://b/ds/data/",
                              "dbsnp": "s3://r/a/germline_resource.vcf.gz", "known_indels": "s3://r/b/germline_resource.vcf.gz",
                              "custom_intervals": "s3://r/c/regions.bed", "use_intervals": True})
     assert p["genome"] == "null"
@@ -137,43 +138,60 @@ def test_custom_genome_without_index_is_an_error():
         apply_genome_params({"genome_source": "dataset"})
 
 
-def test_every_references_library_field_requests_an_s3_path():
+def _fields(node, key=None):
+    if isinstance(node, dict):
+        yield key, node
+        for k, value in node.items():
+            yield from _fields(value, k)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _fields(value, key)
+
+
+def test_fastq_columns_accept_reads_and_a_blank_cell():
+    import json
+    import re
+    form = json.loads(pathlib.Path(__file__).with_name("process-form.json").read_text())
+    columns = form["structuredInputs"]["pipeline_samplesheet"]["schema"]["items"]["properties"]
+    patterns = [re.compile(columns[k]["pattern"]) for k in ("fastq_1", "fastq_2", "fastq_singleton")]
+    for name in ("s3://b/d/S1_R1.fastq.gz", "s3://b/d/S1_2.fq", "/data/S1_R2.fq.gz", ""):
+        assert all(r.search(name) for r in patterns), name
+    for name in ("s3://b/d/S1_I1_001.fastq.gz", "s3://b/d/S1_I2_001.fq.gz", "s3://b/d/S 1_R1.fastq.gz", "s3://b/d/S1.bam", "s3://b/d/"):
+        assert not any(r.search(name) for r in patterns), name
+
+
+def test_form_is_in_path_mode_with_a_structured_samplesheet_and_no_legacy_pickers():
     import json
     form = json.loads(pathlib.Path(__file__).with_name("process-form.json").read_text())
-
-    def fields(node):
-        if isinstance(node, dict):
-            if node.get("pathType") == "references":
-                yield node
-            for value in node.values():
-                yield from fields(value)
-        elif isinstance(node, list):
-            for value in node:
-                yield from fields(value)
-
-    refs = list(fields(form))
-    assert len(refs) == 4
-    assert all(f.get("useS3Path") is True for f in refs), [f["title"] for f in refs if not f.get("useS3Path")]
+    legacy = [k for k, n in _fields(form["form"]) if "pathType" in n or "file" in n and isinstance(n["file"], str) or "useS3Path" in n]
+    assert not legacy, legacy
+    assert form["form"]["required"] == ["input"]
+    assert form["form"]["properties"]["input"] == {"type": "string", "schema": "pipeline_samplesheet"}
+    columns = form["structuredInputs"]["pipeline_samplesheet"]["schema"]["items"]["properties"]
+    assert list(columns) == ["patient", "sample", "status", "fastq_1", "fastq_2", "fastq_singleton"]
+    assert columns["fastq_1"]["format"] == columns["fastq_2"]["format"] == columns["fastq_singleton"]["format"] == "file-path"
+    assert form["structuredInputs"]["pipeline_samplesheet"]["schema"]["items"]["required"] == ["patient", "sample"]
+    inputs = json.loads(pathlib.Path(__file__).with_name("process-input.json").read_text())
+    assert inputs["input"] == "$.structuredInputs.pipeline_samplesheet.path"
+    assert not [k for k, v in inputs.items() if v.endswith(("|/data", "|/config/manifest.csv"))]
 
 
-def test_every_dataset_field_is_filtered_by_process():
+def test_every_reference_picker_is_an_end_anchored_file_path():
     import json
     form = json.loads(pathlib.Path(__file__).with_name("process-form.json").read_text())
+    refs = {k: n for k, n in _fields(form["form"]) if k in ("dbsnp", "known_indels", "custom_intervals") and "format" in n}
+    assert len(refs) == 3
+    for name, n in refs.items():
+        assert n["format"] == "file-path" and n["pattern"].endswith("$") and not n["pattern"].startswith("^"), name
 
-    def fields(node, key=None):
-        if isinstance(node, dict):
-            if node.get("pathType") == "dataset":
-                yield key, node
-            for k, value in node.items():
-                yield from fields(value, k)
-        elif isinstance(node, list):
-            for value in node:
-                yield from fields(value, key)
 
-    datasets = dict(fields(form))
-    assert datasets, "expected at least one dataset field"
-    assert all(f.get("process") for f in datasets.values()), [k for k, f in datasets.items() if not f.get("process")]
-    assert datasets["genome_index"]["process"] == ["process-cirro-genome-index-bwa-1-0", "genome_bwa_index"]
+def test_every_dataset_folder_picker_is_filtered_by_process():
+    import json
+    form = json.loads(pathlib.Path(__file__).with_name("process-form.json").read_text())
+    folders = {k: n for k, n in _fields(form["form"]) if n.get("format") == "directory-path"}
+    assert folders, "expected at least one folder picker"
+    assert all(f.get("process") for f in folders.values()), [k for k, f in folders.items() if not f.get("process")]
+    assert folders["genome_index"]["process"] == ["process-cirro-genome-index-bwa-1-0", "genome_bwa_index"]
 
 
 def test_form_offers_low_memory_off_and_gpuwrite_on_by_default():
@@ -225,53 +243,7 @@ def test_igenomes_branch_offers_three_interval_modes_and_a_custom_bed():
     assert mode["enum"] == ["gatk_calling_regions", "none", "custom"] and mode["default"] == "gatk_calling_regions"
     custom = [b for b in igenomes["dependencies"]["intervals_mode"]["oneOf"] if b["properties"]["intervals_mode"]["enum"] == ["custom"]][0]
     bed = custom["properties"]["custom_intervals"]
-    assert bed["pathType"] == "references" and bed["useS3Path"] is True and custom["required"] == ["custom_intervals"]
-
-
-def test_singleton_found_in_the_file_list_becomes_a_single_end_row_and_is_not_paired():
-    f = files([(0, "S1", "1", 1, "s3://b/S1_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/S1_R2.fq.gz"),
-               (1, "S1", "1", 1, "s3://b/S1__singletons.fastq.gz")])
-    meta = pd.DataFrame([{"sample": "S1", "patient": "P1", "fastq_singleton": "S1__singletons.fastq.gz"}])
-    sheet = build_fastq_samplesheet(f, meta, LOG)
-    assert sorted(zip(sheet["fastq_1"], sheet["fastq_2"])) == [("s3://b/S1_R1.fq.gz", "s3://b/S1_R2.fq.gz"), ("s3://b/S1__singletons.fastq.gz", "")]
-
-
-def test_singleton_missing_from_the_file_list_is_resolved_next_to_fastq_1():
-    f = files([(0, "S1", "1", 1, "s3://b/d/S1_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/d/S1_R2.fq.gz")])
-    meta = pd.DataFrame([{"sample": "S1", "patient": "P1", "fastq_singleton": "S1__singletons.fastq.gz"}])
-    assert "s3://b/d/S1__singletons.fastq.gz" in build_fastq_samplesheet(f, meta, LOG)["fastq_1"].tolist()
-
-
-def test_singleton_with_an_unset_read_number_is_still_handled():
-    f = files([(0, "S1", "1", 1, "s3://b/S1_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/S1_R2.fq.gz"),
-               (1, "S1", "1", None, "s3://b/S1__singletons.fastq.gz")])
-    meta = pd.DataFrame([{"sample": "S1", "patient": "P1", "fastq_singleton": "S1__singletons.fastq.gz"}])
-    assert len(build_fastq_samplesheet(f, meta, LOG)) == 2
-
-
-def test_samples_without_a_singleton_are_unchanged():
-    f = files([(0, "S1", "1", 1, "s3://b/S1_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/S1_R2.fq.gz"),
-               (1, "S2", "1", 1, "s3://b/S2_R1.fq.gz"), (1, "S2", "1", 2, "s3://b/S2_R2.fq.gz")])
-    meta = pd.DataFrame([{"sample": "S1", "patient": "P1", "fastq_singleton": "S1__singletons.fastq.gz"}, {"sample": "S2", "patient": "P2", "fastq_singleton": None}])
-    sheet = build_fastq_samplesheet(f, meta, LOG)
-    assert len(sheet[sheet["sample"] == "S2"]) == 1 and len(sheet[sheet["sample"] == "S1"]) == 2
-
-
-def test_singleton_for_a_sample_without_fastqs_is_an_error():
-    f = files([(0, "S1", "1", 1, "s3://b/S1_R1.fq.gz"), (0, "S1", "1", 2, "s3://b/S1_R2.fq.gz")])
-    meta = pd.DataFrame([{"sample": "S9", "fastq_singleton": "S9__singletons.fastq.gz"}])
-    with pytest.raises(ValueError, match="S9"):
-        build_fastq_samplesheet(f, meta, LOG)
-
-
-def test_singleton_named_in_cirros_file_list_column_is_resolved_next_to_its_mates():
-    d = "s3://project-p/datasets/src/data"
-    f = pd.DataFrame([
-        {"sample": "S1", "file": f"{d}/S1_R1.fastq.gz", "dataset": "src", "sampleIndex": 1, "read": 1, "readType": "R", "singleton": "S1_singletons.fastq.gz"},
-        {"sample": "S1", "file": f"{d}/S1_R2.fastq.gz", "dataset": "src", "sampleIndex": 1, "read": 2, "readType": "R", "singleton": "S1_singletons.fastq.gz"},
-    ])
-    sheet = build_fastq_samplesheet(f, pd.DataFrame([{"sample": "S1", "patient": "P1"}]), LOG)
-    assert sorted(zip(sheet["fastq_1"], sheet["fastq_2"])) == [(f"{d}/S1_R1.fastq.gz", f"{d}/S1_R2.fastq.gz"), (f"{d}/S1_singletons.fastq.gz", "")]
+    assert bed["format"] == "file-path" and custom["required"] == ["custom_intervals"]
 
 
 def test_form_does_not_expose_the_fq2bam_intermediate_format():
