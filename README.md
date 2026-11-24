@@ -349,7 +349,7 @@ Two process registrations come from this repository:
 
 | Directory | Entry point | Input dataset |
 | --- | --- | --- |
-| `.cirro/applybqsr_quantize/` | alignment + table, or quantize only | Apply BQSR modes: a `sarek_align` dataset (`preprocessing/parabricks/<sample>/<sample>.{bam,bam.bai,table}`), or this pipeline's own `--apply_bqsr false` output (`preprocessing/markduplicates/` + `preprocessing/recal_table/`). Quantize only: `preprocessing/recalibrated/` or `preprocessing/markduplicates/` of any alignment dataset |
+| `.cirro/align/` | FASTQ | FASTQ files picked into a samplesheet table on the form, from any datasets |
 | `.cirro/applybqsr_quantize/` | alignment + table, or quantize only | A samplesheet table of alignment, index and recalibration table files, picked from datasets. Apply BQSR modes: a `sarek_align` dataset (`preprocessing/parabricks/<sample>/<sample>.{bam,bam.bai,table}`), or this pipeline's own `--apply_bqsr false` output (`preprocessing/markduplicates/` + `preprocessing/recal_table/`). Quantize only: any alignment |
 
 Each directory holds `process-form.json`, `process-input.json`, `preprocess.py`,
