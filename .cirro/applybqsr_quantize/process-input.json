@@ -1,9 +1,9 @@
 {
-  "input": "$.dataset.s3|/config/manifest.csv",
+  "input": "$.structuredInputs.pipeline_samplesheet.path",
   "outdir": "$.dataset.dataPath",
   "genome_source": "$.dataset.params.genome_selection.genome_source",
   "genome": "$.dataset.params.genome_selection.genome",
-  "genome_index": "$.dataset.params.genome_selection.genome_index|/data",
+  "genome_index": "$.dataset.params.genome_selection.genome_index",
   "igenomes_base": "$.referencesBucketUri|/igenomes/",
   "applybqsr_gpus": "$.dataset.params.mode_selection.applybqsr_gpus",
   "output_fmt": "$.dataset.params.output.output_fmt",
@@ -11,6 +11,5 @@
   "static_quantized_quals": "$.dataset.params.quantization.static_quantized_quals",
   "preserve_qscores_less_than": "$.dataset.params.quantization.preserve_qscores_less_than",
   "round_down_quantized": "$.dataset.params.quantization.round_down_quantized",
-  "mode": "$.dataset.params.mode_selection.mode",
-  "alignment_source": "$.dataset.params.mode_selection.alignment_source"
+  "mode": "$.dataset.params.mode_selection.mode"
 }

@@ -341,7 +341,7 @@ Two process registrations come from this repository:
 | Directory | Entry point | Input dataset |
 | --- | --- | --- |
 | `.cirro/align/` | FASTQ | Paired or single-end FASTQ datasets |
-| `.cirro/applybqsr_quantize/` | alignment + table, or quantize only | Apply BQSR modes: a `sarek_align` dataset (`preprocessing/parabricks/<sample>/<sample>.{bam,bam.bai,table}`), or this pipeline's own `--apply_bqsr false` output (`preprocessing/markduplicates/` + `preprocessing/recal_table/`). Quantize only: `preprocessing/recalibrated/` or `preprocessing/markduplicates/` of any alignment dataset |
+| `.cirro/applybqsr_quantize/` | alignment + table, or quantize only | A samplesheet table of alignment, index and recalibration table files, picked from datasets. Apply BQSR modes: a `sarek_align` dataset (`preprocessing/parabricks/<sample>/<sample>.{bam,bam.bai,table}`), or this pipeline's own `--apply_bqsr false` output (`preprocessing/markduplicates/` + `preprocessing/recal_table/`). Quantize only: any alignment |
 
 Each directory holds `process-form.json`, `process-input.json`, `preprocess.py`,
 `process-compute.config` and `process-output.json`. Both Parabricks processes run on the
@@ -354,15 +354,17 @@ pixel distance, alt-aware postalt (off by default), alignment GPUs, low-memory m
 `fastq_singleton` column in the dataset's samplesheet adds that file to the sample as a
 single-end lane, resolved next to the sample's read 1.
 
-**Apply BQSR and Quantize form:** a mode (Apply BQSR and quantize, Apply BQSR only, or
-Quantize only), genome source (iGenomes GATK.GRCh38, or a custom genome via a BWA index
-dataset), output format, quantization, and a mode-specific field: the apply-BQSR GPU count for
-the two BQSR modes, or the alignment source for Quantize only (`recalibrated`, `markduplicates`,
-or `auto`, which takes a sample's recalibrated alignment when present). Quantize only on a
-`markduplicates` alignment skips recalibration, for reads that were already recalibrated in the
-original BAM. The BQSR modes never read `recalibrated/`, so BQSR is not applied twice. The genome
-must be the one the alignments were made with; a custom genome needs only the BWA index dataset,
-since the recalibration table is already built.
+**Apply BQSR and Quantize form:** a samplesheet table with one row per sample (sample, alignment,
+alignment index, recalibration table), each file chosen from Cirro datasets or entered as an S3 URI;
+a mode (Apply BQSR and quantize, Apply BQSR only, or Quantize only), genome source (iGenomes
+GATK.GRCh38, or a custom genome via a BWA index dataset), output format, quantization, and the
+apply-BQSR GPU count for the two BQSR modes. A blank index uses the alignment's own `.bai` or
+`.crai`. The recalibration table is required except in Quantize only, which ignores it. Choosing the
+files replaces a separate alignment-source field: for Quantize only, pick a `recalibrated`
+alignment (BQSR applied, not quantized) or a duplicate-marked alignment whose reads were already
+recalibrated in the original BAM. The BQSR modes reject an alignment under a `recalibrated/`
+folder, so BQSR is not applied twice. The genome must be the one the alignments were made with; a
+custom genome needs only the BWA index dataset, since the recalibration table is already built.
 
 **Registration settings:** repository `break-through-cancer/parabricks-fq2bam-bqsr`, entry
 script `main.nf`, configuration directory `.cirro/align` or `.cirro/applybqsr_quantize`, Nextflow
